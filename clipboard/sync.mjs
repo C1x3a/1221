@@ -1,4 +1,4 @@
-import {from64,to64} from './core.mjs';
+import {from64,to64,validTransport} from './core.mjs';
 
 export const SYNC_API='https://c1clip-sync.netlify.app/api/settings';
 const PREFIX='C1S1.';
@@ -10,7 +10,7 @@ export async function workspaceId(code){const {bytes}=syncKey(code),hash=new Uin
 async function keyFor(code,usage){return crypto.subtle.importKey('raw',syncKey(code).bytes,{name:'AES-GCM'},false,usage)}
 
 export function validController(value){
- if(!value||typeof value!=='object'||!/^c1clip-[A-Za-z0-9_-]{20,50}$/.test(value.host)||!Array.isArray(value.devices)||value.devices.length>500||!Array.isArray(value.groups)||value.groups.length>500)return false;
+ if(!value||typeof value!=='object'||!/^c1clip-[A-Za-z0-9_-]{20,50}$/.test(value.host)||!Array.isArray(value.devices)||value.devices.length>500||!Array.isArray(value.groups)||value.groups.length>500||(value.transport!==undefined&&!validTransport(value.transport)))return false;
  const ids=new Set();
  for(const d of value.devices){if(!d||typeof d.name!=='string'||!d.name.trim()||d.name.length>60||!/^d[A-Za-z0-9_-]{10,40}$/.test(d.id)||ids.has(d.id))return false;try{if(from64(d.key).length!==32)return false}catch{return false}ids.add(d.id)}
  return value.groups.every(g=>g&&/^g[A-Za-z0-9_-]{10,40}$/.test(g.id)&&typeof g.name==='string'&&g.name.trim()&&g.name.length<=60&&Array.isArray(g.members)&&g.members.length<=500&&g.members.every(id=>ids.has(id)));

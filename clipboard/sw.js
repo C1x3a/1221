@@ -1,5 +1,5 @@
-const CACHE='c1clip-shell-v5';
-const ASSETS=['./','./index.html','./style.css','./app.mjs','./core.mjs','./manage.mjs','./extract.mjs','./sync.mjs','./vendor/peerjs.min.js','./vendor/qrcode.js','./icon-192.png','./icon-512.png','./manifest.webmanifest'];
+const CACHE='c1clip-shell-v6';
+const ASSETS=['./','./index.html','./style.css','./app.mjs','./core.mjs','./manage.mjs','./extract.mjs','./sync.mjs','./vendor/mqtt.min.js','./vendor/qrcode.js','./icon-192.png','./icon-512.png','./manifest.webmanifest'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('c1clip-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==self.location.origin||!url.pathname.startsWith(new URL('./',self.location).pathname))return;event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(cache=>cache.put(event.request,copy)))}return response}).catch(async()=>{const cached=await caches.match(event.request);return cached||new Response('当前离线，请联网后重试。',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}})}))});

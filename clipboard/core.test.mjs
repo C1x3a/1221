@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLines,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,TTL} from './core.mjs';
+import {parseLines,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,validTransport,PUBLIC_TRANSPORT,TTL} from './core.mjs';
 
 test('four independent records preserve order, duplicate values, punctuation and spaces',async()=>{
  const items=parseLines('姓名示例\r\n\r\n  地址 示例，A号  \n姓名示例\n尾号 0001');
@@ -23,9 +23,11 @@ test('separate device keys, authenticated encryption, and tamper rejection',asyn
  assert.notEqual((await seal(a,batch)).iv,sealed.iv);
 });
 test('pairing URL round trip and malformed input rejection',()=>{
- const pair={v:1,host:'c1clip-'+token(18),device:'d'+token(12),name:'小米 12 Pro · 1',key:token(32)};
+ const pair={v:2,host:'c1clip-'+token(18),device:'d'+token(12),name:'小米 12 Pro · 1',key:token(32),broker:PUBLIC_TRANSPORT};
  assert.deepEqual(readPair('https://example.test/#pair='+pairingCode(pair)),pair);assert.throws(()=>readPair('not-a-pair'));
  assert.throws(()=>readPair(pairingCode({...pair,key:token(16)})));
+ assert.throws(()=>readPair(pairingCode({...pair,v:1,broker:undefined})),/旧版配对/);
+ assert.equal(validTransport(PUBLIC_TRANSPORT),true);assert.equal(validTransport({...PUBLIC_TRANSPORT,urls:['ws://unsafe.test/mqtt']}),false);
 });
 test('batches reject old, future, excessive or empty payloads',()=>{
  const batch={id:token(18),createdAt:Date.now(),items:['a','b','c','d']};assert.ok(validBatch(batch));

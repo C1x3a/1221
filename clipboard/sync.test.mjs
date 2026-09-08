@@ -4,7 +4,7 @@ import {webcrypto} from 'node:crypto';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 import {SYNC_API,createSyncCode,syncKey,workspaceId,encryptController,decryptController,fetchSettings,putSettings} from './sync.mjs';
 
-const controller={host:'c1clip-abcdefghijklmnopqrstuvwx',devices:[{id:'dabcdefghijklmnop',name:'小米 12 Pro · 1',key:'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}],groups:[{id:'gabcdefghijklmnop',name:'家里',members:['dabcdefghijklmnop']}]};
+const controller={host:'c1clip-abcdefghijklmnopqrstuvwx',devices:[{id:'dabcdefghijklmnop',name:'小米 12 Pro · 1',key:'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}],groups:[{id:'gabcdefghijklmnop',name:'家里',members:['dabcdefghijklmnop']}],transport:{urls:['wss://broker.emqx.io:8084/mqtt','wss://broker-cn.emqx.io:8084/mqtt'],username:'',password:''}};
 
 test('sync code encrypts and decrypts controller settings only',async()=>{
  assert.equal(SYNC_API,'https://c1clip-sync.netlify.app/api/settings');
