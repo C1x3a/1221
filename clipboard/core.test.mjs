@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLines,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,TTL} from './core.mjs';
+import {parseLines,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,TTL} from './core.mjs';
 
 test('four independent records preserve order, duplicate values, punctuation and spaces',async()=>{
  const items=parseLines('姓名示例\r\n\r\n  地址 示例，A号  \n姓名示例\n尾号 0001');
@@ -30,4 +30,8 @@ test('pairing URL round trip and malformed input rejection',()=>{
 test('batches reject old, future, excessive or empty payloads',()=>{
  const batch={id:token(18),createdAt:Date.now(),items:['a','b','c','d']};assert.ok(validBatch(batch));
  for(const invalid of [{...batch,items:[]},{...batch,items:['']},{...batch,items:Array(21).fill('a')},{...batch,createdAt:Date.now()-TTL-1},{...batch,createdAt:Date.now()+120000},{...batch,items:['a'.repeat(4001)]}])assert.equal(validBatch(invalid),false);
+});
+test('long identity lists split into valid batches of twenty while preserving order',()=>{
+ const items=Array.from({length:58},(_,i)=>'item-'+i),chunks=chunkItems(items);
+ assert.deepEqual(chunks.map(x=>x.length),[20,20,18]);assert.deepEqual(chunks.flat(),items);
 });

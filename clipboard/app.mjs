@@ -1,4 +1,6 @@
-import {TTL,DEVICE_NAMES,token,parseLines,validBatch,pairingCode,readPair,seal,unseal,copyBatch} from './core.mjs';
+import {TTL,DEVICE_NAMES,token,parseLines,chunkItems,validBatch,pairingCode,readPair,seal,unseal,copyBatch} from './core.mjs';
+import {migrateController,addNamedDevices,renameDevice,removeDevice,saveGroup,groupSelection} from './manage.mjs';
+import {extractPeople,peopleToText,idShape} from './extract.mjs';
 const $=id=>document.getElementById(id);
 const PREF='c1clip.preferences.v1',SESSION='c1clip.session.v1';
 let storageFailed=false;
@@ -9,12 +11,15 @@ work.inbox=(Array.isArray(work.inbox)?work.inbox:[]).filter(x=>validBatch(x.batc
 work.drafts=work.drafts||{};
 let role='controller',peer=null,generation=0,peerReady=false,phoneConn=null,retryAt=0,copying=false,sending=false,stopCopy=false,selectedBatch=null,installPrompt=null,toastTimer;
 const channels=new Map(),selected=new Set(),receipts=new Map();
+let selectedInitialized=false,activeGroup=work.activeGroup||null,editingDevice=null,editingGroup=null,groupMembers=new Set(),extractRows=[],extractTimer,viewTimer;
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
 function toast(text){$('toast').textContent=text;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500)}
 function save(){try{localStorage.setItem(PREF,JSON.stringify(prefs));sessionStorage.setItem(SESSION,JSON.stringify(work))}catch{if(!storageFailed){storageFailed=true;toast('浏览器未能保存本机状态，关闭页面后可能需要重新配对。')}}}
 function feedback(text,error=false){$('send-result').textContent=text;$('send-result').className='feedback'+(error?' error':'')}
 function connection(text,bad=false){$('connection-text').textContent=text;$('connection').className='connection'+(bad?' bad':'')}
-function ensureController(){if(!prefs.controller){prefs.controller={host:'c1clip-'+token(18),devices:DEVICE_NAMES.map(name=>({id:'d'+token(12),name,key:token(32)}))};save()}if(!selected.size)prefs.controller.devices.forEach(d=>selected.add(d.id))}
+function ensureController(){if(!prefs.controller)prefs.controller={host:'c1clip-'+token(18),devices:DEVICE_NAMES.map(name=>({id:'d'+token(12),name,key:token(32)}))};migrateController(prefs.controller);if(!selectedInitialized){const ids=new Set(prefs.controller.devices.map(d=>d.id));(Array.isArray(work.selected)?work.selected:[...ids]).filter(id=>ids.has(id)).forEach(id=>selected.add(id));selectedInitialized=true;if(!prefs.controller.groups.some(g=>g.id===activeGroup))activeGroup=null}save()}
+function saveSelection(){work.selected=[...selected];work.activeGroup=activeGroup;save()}
+function scheduleOutbox(){if(viewTimer)return;viewTimer=setTimeout(()=>{viewTimer=null;save();renderOutbox()},60)}
 function pairFor(device){return {v:1,host:prefs.controller.host,device:device.id,key:device.key,name:device.name}}
 function pairURL(pair){return new URL('./',location.href).href+'#pair='+pairingCode(pair)}
 function finished(status){return ['copied','confirmed','deleted'].includes(status)}
@@ -32,7 +37,7 @@ async function sendPacket(link,payload){
 function attachSerial(link,handler){link.chain=Promise.resolve();link.on('data',data=>{link.chain=link.chain.then(async()=>{if(link.stale)return;const msg=await unseal(link.secret,data);link.lastSeen=Date.now();await handler(msg)}).catch(()=>{link.stale=true;link.close()})})}
 function updateNetwork(){
  if(role==='controller'){
-  const n=[...channels.values()].filter(alive).length;$('online-count').textContent=n+' / 4 在线';
+  const n=[...channels.values()].filter(alive).length;$('online-count').textContent=n+' / '+(prefs.controller?.devices.length||0)+' 在线';
   if(peerReady)connection(n?'控制台已连接，'+n+' 部手机在线':'控制台已就绪，等待手机扫码连接');
   for(const d of prefs.controller?.devices||[]){const s=$('device-state-'+d.id);if(s){s.textContent=alive(channels.get(d.id))?'在线':'未连接';s.className='device-status'+(alive(channels.get(d.id))?' online':'')}}
  }else if(alive(phoneConn))connection('已连接电脑，可以接收信息');
@@ -61,6 +66,7 @@ function acceptPhone(link){
  const timer=setTimeout(()=>{if(!link.authenticated)link.close()},15000);
  link.on('open',()=>sendPacket(link,{t:'challenge',sid:link.sid}).catch(()=>link.close()));
  attachSerial(link,async msg=>{
+  if(!prefs.controller.devices.some(device=>device.id===d.id&&device.key===link.secret)){link.close();return}
   if(msg.sid!==link.sid)return;
   if(!link.authenticated){
    if(msg.t!=='hello')return;
@@ -77,7 +83,7 @@ function acceptPhone(link){
    if(!Number.isInteger(msg.copied)||msg.copied<0||msg.copied>row.batch.items.length)return;
    if(msg.status==='copied'&&msg.copied!==row.batch.items.length)return;
    if(msg.status==='confirmed'&&msg.copied!==row.batch.items.length)return;
-   row.status=msg.status;row.copied=msg.copied;row.error=typeof msg.error==='string'?msg.error.slice(0,180):'';save();renderOutbox();
+   row.status=msg.status;row.copied=msg.copied;row.error=typeof msg.error==='string'?msg.error.slice(0,180):'';scheduleOutbox();
   }
  });
  link.on('close',()=>{clearTimeout(timer);if(channels.get(d.id)===link){channels.delete(d.id);updateNetwork()}});
@@ -94,12 +100,14 @@ function connectPhone(){
   if(msg.t==='challenge'&&!link.authenticated){if(typeof msg.sid!=='string'||msg.sid.length>64)return;link.sid=msg.sid;await sendPacket(link,{t:'hello',sid:link.sid});return}
   if(!link.sid||msg.sid!==link.sid)return;
   if(msg.t==='ready'){
+   receiveName(msg.name);
    link.authenticated=true;clearTimeout(timer);connection('已连接电脑，可以接收信息');
    for(const entry of work.inbox.filter(e=>e.device===pair.device))await phoneReceipt(entry);
    for(const entry of receipts.values())await sendPacket(link,{...entry,sid:link.sid});
    return;
   }
   if(!link.authenticated)return;
+  if(msg.t==='name'){receiveName(msg.name);return}
   if(msg.t==='ping'){await sendPacket(link,{t:'pong',sid:link.sid});return}if(msg.t==='pong')return;
   if(msg.t==='batch'){
    if(!validBatch(msg.batch))return;
@@ -119,21 +127,66 @@ function connectPhone(){
 }
 async function phoneReceipt(entry){if(!alive(phoneConn))return;try{await sendPacket(phoneConn,{t:'receipt',sid:phoneConn.sid,id:entry.batch.id,status:entry.status,copied:entry.copied||0,error:entry.error||''})}catch{}}
 async function flushDevice(id){
- const link=channels.get(id);if(!alive(link))return;
- for(const row of work.outbox.filter(e=>e.device===id&&['queued','sent'].includes(e.status))){
+ const link=channels.get(id);if(!alive(link)||link.flushing)return;
+ const pending=work.outbox.filter(e=>e.device===id&&['queued','sent'].includes(e.status)&&Date.now()-(e.lastAttempt||0)>=5000);if(!pending.length)return;
+ link.flushing=true;try{for(const row of pending){
   if(Date.now()-(row.lastAttempt||0)<5000)continue;
   row.lastAttempt=Date.now();
   try{await sendPacket(link,{t:'batch',sid:link.sid,batch:row.batch});if(row.status==='queued')row.status='sent'}catch{row.status='queued'}
- }
- save();renderOutbox();
+ }}finally{link.flushing=false;scheduleOutbox()}
 }
 function renderDevices(){
- $('devices').replaceChildren(...prefs.controller.devices.map(d=>{
+ const query=$('device-search').value.trim().toLocaleLowerCase(),visible=prefs.controller.devices.filter(d=>d.name.toLocaleLowerCase().includes(query));
+ $('devices').replaceChildren(...visible.map(d=>{
   const card=el('div','device'+(selected.has(d.id)?' selected':'')),top=el('div','device-top'),check=el('input');check.type='checkbox';check.id='select-'+d.id;check.checked=selected.has(d.id);
   const name=el('label','',d.name);name.htmlFor=check.id;top.append(check,name);
-  check.addEventListener('change',()=>{check.checked?selected.add(d.id):selected.delete(d.id);card.classList.toggle('selected',check.checked);renderDifferent();updateCompose()});
-  const bottom=el('div','device-bottom'),status=el('span','device-status','未连接');status.id='device-state-'+d.id;const button=el('button','small ghost','配对');button.onclick=()=>openPair(d);bottom.append(status,button);card.append(top,bottom);return card;
- }));updateNetwork();
+  check.addEventListener('change',()=>{check.checked?selected.add(d.id):selected.delete(d.id);activeGroup=null;saveSelection();card.classList.toggle('selected',check.checked);renderGroups();renderDifferent();updateCompose()});
+  const bottom=el('div','device-bottom'),status=el('span','device-status','未连接');status.id='device-state-'+d.id;const buttons=el('div','device-buttons'),pair=el('button','small ghost','配对'),manage=el('button','small ghost','管理');pair.onclick=()=>openPair(d);manage.onclick=()=>openDevice(d);manage.setAttribute('aria-label','管理 '+d.name);buttons.append(pair,manage);bottom.append(status,buttons);card.append(top,bottom);return card;
+ }));if(!visible.length)$('devices').append(el('p','muted',prefs.controller.devices.length?'没有匹配的手机':'还没有手机，点击“添加手机”开始。'));renderGroups();updateTargets();updateNetwork();
+}
+function renderGroups(){
+ $('groups').replaceChildren(...prefs.controller.groups.map(g=>{const wrap=el('div','group-chip'),choose=el('button','small',g.name+' · '+g.members.length),edit=el('button','small ghost','管理');choose.setAttribute('aria-pressed',String(activeGroup===g.id));choose.onclick=()=>selectGroup(g.id);edit.setAttribute('aria-label','管理分组 '+g.name);edit.onclick=()=>openGroup(g);wrap.append(choose,edit);return wrap}));
+ if(!prefs.controller.groups.length)$('groups').append(el('p','muted','勾选手机后新建分组，下次点组名即可选中整组。'));
+ $('selected-count').textContent='已选 '+selected.size+' / '+prefs.controller.devices.length+' 台';
+}
+function selectGroup(id){activeGroup=id;selected.clear();groupSelection(prefs.controller,id).forEach(id=>selected.add(id));saveSelection();renderDevices();renderDifferent();updateCompose()}
+function openDevice(device=null){editingDevice=device?.id||null;$('device-dialog-title').textContent=device?'管理手机':'批量添加手机';$('device-add-fields').hidden=!!device;$('device-edit-fields').hidden=!device;$('device-delete').hidden=!device;$('device-save').textContent=device?'保存名称':'添加手机';$('device-name').value=device?.name||'';$('device-names').value='';$('device-error').textContent='';$('device-dialog').showModal()}
+function submitDevice(event){
+ event.preventDefault();try{
+  if(editingDevice){const d=renameDevice(prefs.controller,editingDevice,$('device-name').value);save();const link=channels.get(d.id);if(alive(link))sendPacket(link,{t:'name',sid:link.sid,name:d.name}).catch(()=>{});toast('名称已更新，原有配对保留')}
+  else{const result=addNamedDevices(prefs.controller,$('device-names').value);if(!result.added.length)throw new Error('这些名称已存在，请填写新的手机名称');selected.clear();result.added.forEach(d=>selected.add(d.id));activeGroup=null;saveSelection();toast('已添加并选中 '+result.added.length+' 台手机'+(result.skipped?'，跳过 '+result.skipped+' 个重复名称':''))}
+  $('device-dialog').close();renderDevices();renderDifferent();updateCompose();renderOutbox();
+ }catch(err){$('device-error').textContent=err.message}
+}
+function deleteDevice(){
+ const d=prefs.controller.devices.find(d=>d.id===editingDevice);if(!d)return;
+ if(!confirm('删除“'+d.name+'”？将断开配对、移出所有分组，并清除电脑上这部手机的发送记录。'))return;
+ removeDevice(prefs.controller,d.id);const link=channels.get(d.id);if(link){channels.delete(d.id);link.stale=true;link.close()}selected.delete(d.id);delete work.drafts[d.id];work.outbox=work.outbox.filter(x=>x.device!==d.id);saveSelection();$('device-dialog').close();renderDevices();renderDifferent();updateCompose();renderOutbox();toast('已删除这部手机。以后可重新添加并扫码配对。');
+}
+function receiveName(name){if(!prefs.phone||typeof name!=='string'||!name.trim()||name.length>60)return;prefs.phone.name=name.trim();$('phone-name').textContent=prefs.phone.name;history.replaceState(null,'',pairURL(prefs.phone));save()}
+function openGroup(group=null){editingGroup=group?.id||null;groupMembers=new Set(group?group.members:selected);$('group-name').value=group?.name||'';$('group-dialog-title').textContent=group?'管理分组':'新建分组';$('group-delete').hidden=!group;$('group-error').textContent='';renderGroupMembers();$('group-dialog').showModal()}
+function renderGroupMembers(){
+ $('group-members').replaceChildren(...prefs.controller.devices.map(d=>{const label=el('label','member-row'),check=el('input');check.type='checkbox';check.checked=groupMembers.has(d.id);check.onchange=()=>check.checked?groupMembers.add(d.id):groupMembers.delete(d.id);label.append(check,el('span','',d.name));return label}));if(!prefs.controller.devices.length)$('group-members').append(el('p','muted','还没有手机，可先保存空分组。'));
+}
+function submitGroup(event){event.preventDefault();try{const group=saveGroup(prefs.controller,{id:editingGroup,name:$('group-name').value,members:[...groupMembers]});save();$('group-dialog').close();if(activeGroup===group.id)selectGroup(group.id);else renderGroups();toast('分组已保存，点击组名即可选中 '+group.members.length+' 台手机')}catch(err){$('group-error').textContent=err.message}}
+function deleteGroup(){const group=prefs.controller.groups.find(g=>g.id===editingGroup);if(!group)return;if(!confirm('删除分组“'+group.name+'”？其中的手机和配对会保留。'))return;prefs.controller.groups=prefs.controller.groups.filter(g=>g.id!==group.id);if(activeGroup===group.id)activeGroup=null;saveSelection();$('group-dialog').close();renderGroups()}
+function updateTargets(){const current=$('extract-target').value;$('extract-target').replaceChildren();const shared=el('option','','统一内容 · 发给所选手机');shared.value='shared';$('extract-target').append(shared);for(const d of prefs.controller.devices){const option=el('option','',d.name+' · 单独内容');option.value=d.id;$('extract-target').append(option)}$('extract-target').value=current==='shared'||prefs.controller.devices.some(d=>d.id===current)?current:'shared'}
+function runExtraction(){clearTimeout(extractTimer);try{extractRows=extractPeople($('extract-source').value);renderExtraction()}catch(err){$('extract-summary').textContent=err.message}}
+function extractionSummary(){const n=extractRows.filter(r=>r.selected).length,missing=extractRows.filter(r=>!r.name.trim()).length;$('extract-summary').textContent=extractRows.length?'找到 '+extractRows.length+' 个身份证号码，已选 '+n+' 人 → '+n*2+' 条独立信息'+(missing?'；'+missing+' 项姓名待补填':''):'没有识别到完整的 18 位或 15 位身份证号码，请检查原文。';$('extract-apply').disabled=!n}
+function renderExtraction(){
+ $('extract-results').hidden=!extractRows.length;$('extract-rows').replaceChildren(...extractRows.map((r,i)=>{
+  const row=el('tr'),selectCell=el('td'),check=el('input');check.type='checkbox';check.checked=r.selected;check.setAttribute('aria-label','选择第 '+(i+1)+' 人');check.onchange=()=>{r.selected=check.checked;extractionSummary()};selectCell.append(check);
+  const nameCell=el('td'),name=el('input');name.value=r.name;name.maxLength=60;name.placeholder='请补填姓名';name.setAttribute('aria-label','第 '+(i+1)+' 人姓名');name.oninput=()=>{r.name=name.value;extractionSummary()};nameCell.append(name);
+  const idCell=el('td'),id=el('input');id.value=r.id;id.maxLength=18;id.spellcheck=false;id.autocomplete='off';id.setAttribute('aria-label','第 '+(i+1)+' 人身份证');id.oninput=()=>{r.id=id.value;extractionSummary()};idCell.append(id);
+  const reason=el('td','extract-reason'),label=el('div','',r.reason),details=el('details'),summary=el('summary','','查看原文片段');details.append(summary,el('p','',r.source));reason.append(label,details);row.append(selectCell,nameCell,idCell,reason);return row;
+ }));extractionSummary();
+}
+function applyExtraction(){
+ try{const text=peopleToText(extractRows);if(text.length>17000)throw new Error('结果过长，请少选一些人员分次填入');const target=$('extract-target').value;
+  if(target==='shared'){work.shared=text;work.compose='same';$('shared-text').value=text}
+  else{if(!prefs.controller.devices.some(d=>d.id===target))throw new Error('目标手机已删除，请重新选择');work.drafts[target]=text;work.compose='different';if(!selected.has(target)){selected.add(target);activeGroup=null;saveSelection()}renderDevices();renderDifferent()}
+  save();updateCompose();feedback('已填入 '+extractRows.filter(r=>r.selected).length+' 人的姓名与身份证，分别作为独立条目。请检查接收手机后点击发送。');$('send').scrollIntoView({behavior:'smooth',block:'center'});
+ }catch(err){$('extract-summary').textContent=err.message}
 }
 function renderDifferent(){
  $('different-compose').replaceChildren(...prefs.controller.devices.filter(d=>selected.has(d.id)).map(d=>{const wrap=el('div'),label=el('label','',d.name+' · 每行一条'),input=el('textarea');input.id='draft-'+d.id;input.rows=4;input.maxLength=17000;input.placeholder='填写只发给这部手机的内容';input.value=work.drafts[d.id]||'';input.spellcheck=false;label.htmlFor=input.id;input.oninput=()=>{work.drafts[d.id]=input.value;save();updateCompose()};wrap.append(label,input);return wrap}));
@@ -144,6 +197,7 @@ function updateCompose(){
  $('item-count').textContent=same?count+' 条':selected.size+' 部手机';
  $('preview').replaceChildren();if(same&&count){for(let i=0;i<Math.min(count,20);i++)$('preview').append(el('span','','第 '+(i+1)+' 条'))}
  $('send').textContent='发送给 '+selected.size+' 部手机';$('send').disabled=!selected.size||sending;
+ $('selected-count').textContent='已选 '+selected.size+' / '+(prefs.controller?.devices.length||0)+' 台';
 }
 const statusText={queued:'等待连接 · 保存在当前电脑标签页',sent:'已发出 · 等待手机回执',received:'手机已接收 · 等待点击复制',copying:'手机正在逐条复制',copied:'逐条复制完成 · 历史待手机确认',confirmed:'手机已确认全部进入历史',error:'需要处理',deleted:'手机已删除这批内容'};
 function renderOutbox(){
@@ -161,10 +215,10 @@ function renderOutbox(){
 async function sendSelected(){
  if(!selected.size||sending)return;
  clearExpired();const prepared=[];
- try{for(const d of prefs.controller.devices.filter(x=>selected.has(x.id))){if(work.outbox.filter(x=>x.device===d.id&&!finished(x.status)).length>=12)throw new Error(d.name+' 已有 12 批未结束记录，请先处理');let items;try{items=parseLines(work.compose==='different'?work.drafts[d.id]||'':work.shared||'')}catch(err){throw new Error(d.name+'：'+err.message)}prepared.push({device:d.id,batch:{id:token(18),createdAt:Date.now(),items},status:'queued',copied:0})}}
+ try{for(const d of prefs.controller.devices.filter(x=>selected.has(x.id))){let items;try{items=parseLines(work.compose==='different'?work.drafts[d.id]||'':work.shared||'',240)}catch(err){throw new Error(d.name+'：'+err.message)}const chunks=chunkItems(items);if(work.outbox.filter(x=>x.device===d.id&&!finished(x.status)).length+chunks.length>12)throw new Error(d.name+' 最多同时等待 12 批，请先处理已有内容或减少本次内容');for(const items of chunks)prepared.push({device:d.id,batch:{id:token(18),createdAt:Date.now(),items},status:'queued',copied:0})}}
  catch(err){feedback(err.message,true);return}
- work.outbox.push(...prepared);save();renderOutbox();feedback('已为 '+prepared.length+' 部手机建立发送任务。请查看下方接收进度。');
- sending=true;updateCompose();try{for(const row of prepared)await flushDevice(row.device)}finally{sending=false;updateCompose()}
+ work.outbox.push(...prepared);save();renderOutbox();feedback('已为 '+new Set(prepared.map(x=>x.device)).size+' 部手机建立 '+prepared.length+' 批发送任务。请查看下方接收进度。');
+ sending=true;updateCompose();try{for(const device of new Set(prepared.map(x=>x.device)))await flushDevice(device)}finally{sending=false;updateCompose()}
 }
 function openPair(device){
  $('pair-title').textContent=device.name+' · 配对';$('pair-link').value=pairURL(pairFor(device));$('pair-status').textContent=alive(channels.get(device.id))?'这部手机已在线。':'请保持电脑页面打开。';
@@ -223,7 +277,15 @@ function setRole(next){
 }
 async function simpleCopy(text){if(navigator.clipboard?.writeText){await navigator.clipboard.writeText(text);return}throw new Error('请长按链接文本手动复制')}
 $('mode-controller').onclick=()=>setRole('controller');$('mode-phone').onclick=()=>setRole('phone');$('reconnect').onclick=()=>{if(copying){toast('复制结束后再重连');return}bootNetwork()};
-$('select-all').onclick=()=>{if(selected.size===4)selected.clear();else prefs.controller.devices.forEach(d=>selected.add(d.id));renderDevices();renderDifferent();updateCompose()};
+$('select-all').onclick=()=>{prefs.controller.devices.forEach(d=>selected.add(d.id));activeGroup=null;saveSelection();renderDevices();renderDifferent();updateCompose()};
+$('select-none').onclick=()=>{selected.clear();activeGroup=null;saveSelection();renderDevices();renderDifferent();updateCompose()};
+$('device-search').oninput=renderDevices;$('add-device').onclick=()=>openDevice();$('device-form').onsubmit=submitDevice;$('device-delete').onclick=deleteDevice;
+$('new-group').onclick=()=>openGroup();$('group-form').onsubmit=submitGroup;$('group-delete').onclick=deleteGroup;
+$('group-all').onclick=()=>{groupMembers=new Set(prefs.controller.devices.map(d=>d.id));renderGroupMembers()};$('group-none').onclick=()=>{groupMembers.clear();renderGroupMembers()};
+document.querySelectorAll('[data-close]').forEach(button=>button.onclick=()=>$(button.dataset.close).close());
+$('extract-source').oninput=()=>{clearTimeout(extractTimer);extractTimer=setTimeout(runExtraction,400)};$('extract-run').onclick=runExtraction;
+$('extract-clear').onclick=()=>{clearTimeout(extractTimer);$('extract-source').value='';extractRows=[];$('extract-results').hidden=true;$('extract-rows').replaceChildren();$('extract-summary').textContent='姓名和身份证各占一条，两个人会生成四条独立信息。'};
+$('extract-all').onclick=()=>{extractRows.forEach(r=>r.selected=!!r.name.trim()&&idShape(r.id));renderExtraction()};$('extract-none').onclick=()=>{extractRows.forEach(r=>r.selected=false);renderExtraction()};$('extract-apply').onclick=applyExtraction;
 $('shared-text').oninput=e=>{work.shared=e.target.value;save();updateCompose()};
 $('same-mode').onclick=()=>{work.compose='same';save();updateCompose()};$('different-mode').onclick=()=>{work.compose='different';save();renderDifferent();updateCompose()};
 $('send').onclick=sendSelected;
