@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLines,hasSendableText,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,validTransport,PUBLIC_TRANSPORT,TTL} from './core.mjs';
+import {parseLines,hasSendableText,replaceDeviceEntries,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,validTransport,PUBLIC_TRANSPORT,TTL} from './core.mjs';
 
 test('four independent records preserve order, duplicate values, punctuation and spaces',async()=>{
  const items=parseLines('姓名示例\r\n\r\n  地址 示例，A号  \n姓名示例\n尾号 0001');
@@ -36,9 +36,13 @@ test('pairing URL round trip and malformed input rejection',()=>{
 });
 test('batches reject old, future, excessive or empty payloads',()=>{
  const batch={id:token(18),createdAt:Date.now(),items:['a','b','c','d']};assert.ok(validBatch(batch));
- for(const invalid of [{...batch,items:[]},{...batch,items:['']},{...batch,items:Array(21).fill('a')},{...batch,createdAt:Date.now()-TTL-1},{...batch,createdAt:Date.now()+120000},{...batch,items:['a'.repeat(4001)]}])assert.equal(validBatch(invalid),false);
+ for(const invalid of [{...batch,items:[]},{...batch,items:['']},{...batch,items:Array(241).fill('a')},{...batch,createdAt:Date.now()-TTL-1},{...batch,createdAt:Date.now()+120000},{...batch,items:['a'.repeat(4001)]}])assert.equal(validBatch(invalid),false);
 });
-test('long identity lists split into valid batches of twenty while preserving order',()=>{
- const items=Array.from({length:58},(_,i)=>'item-'+i),chunks=chunkItems(items);
- assert.deepEqual(chunks.map(x=>x.length),[20,20,18]);assert.deepEqual(chunks.flat(),items);
+test('one latest-content payload supports up to 240 independent items',()=>{
+ const items=Array.from({length:240},(_,i)=>'item-'+i),batch={id:token(18),createdAt:Date.now(),items};
+ assert.deepEqual(parseLines(items.join('\n')),items);assert.equal(validBatch(batch),true);assert.throws(()=>parseLines(items.concat('overflow').join('\n')),/最多发送 240 条/);
+});
+test('new content replaces the previous entry for that phone and preserves other phones',()=>{
+ const oldA={device:'a',value:'old'},oldB={device:'b',value:'keep'},newA={device:'a',value:'new'};
+ assert.deepEqual(replaceDeviceEntries([oldA,oldB],newA),[oldB,newA]);
 });

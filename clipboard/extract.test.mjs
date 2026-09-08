@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {extractPeople,peopleToText} from './extract.mjs';
+import {extractPeople,extractIdentitySegments,peopleToText} from './extract.mjs';
 
 const A='11010519491231002X';
 const B='440524188001010014';
@@ -30,4 +30,13 @@ test('does not silently pair unrelated note text as a name',()=>{
 test('rejects selected incomplete results',()=>{
  assert.throws(()=>peopleToText([{name:'',id:A,selected:true}]));
  assert.throws(()=>peopleToText([{name:'张三',id:'123',selected:true}]));
+});
+
+test('splits blank-line separated ticket identity groups into single, double and multi-person segments',()=>{
+ const C='32031119770706001X';
+ const D='510105196611080014';
+ const E='130503196704010016';
+ const segments=extractIdentitySegments(`张三 ${A}\n\n李四 ${B}\n王五 ${C}\n\n赵六 ${D}\n钱七 ${E}\n孙八 ${A}`);
+ assert.deepEqual(segments.map(segment=>[segment.label,segment.people.length]),[['单人信息',1],['双人信息',2],['3 人信息',3]]);
+ assert.equal(peopleToText(segments[1].people),`李四\n${B}\n王五\n${C}`);
 });

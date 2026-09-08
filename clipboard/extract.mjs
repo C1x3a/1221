@@ -56,6 +56,14 @@ export function extractPeople(input){
   return {name,id:id.id,reason,selected:!!name&&!uncertain&&!duplicate,duplicate,source:text.slice(Math.max(0,Math.min(id.start,chosen?.start??id.start)-24),Math.min(text.length,Math.max(id.end,chosen?.end??id.end)+24)).trim()};
  });
 }
+export function extractIdentitySegments(input){
+ const text=String(input||'').normalize('NFKC').replace(/\r\n?/g,'\n');
+ if(text.length>100000)throw new Error('原文最多 100000 个字符，请分次粘贴');
+ const blocks=text.split(/\n[ \t]*\n+|^[ \t]*(?:-{3,}|={3,})[ \t]*$/m).map(value=>value.trim()).filter(Boolean);
+ const segments=[];
+ for(const source of blocks){const people=extractPeople(source);if(!people.length)continue;const order=segments.length+1;segments.push({id:'segment-'+order,order,source,people,label:people.length===1?'单人信息':people.length===2?'双人信息':people.length+' 人信息'})}
+ return segments;
+}
 export function peopleToText(rows){
  const selected=rows.filter(r=>r.selected);if(!selected.length)throw new Error('请先勾选要使用的人员');
  for(const r of selected){if(!String(r.name).trim())throw new Error('所选结果中有姓名为空，请补填');if(!idShape(r.id))throw new Error('所选结果中有身份证格式不完整，请核对')}

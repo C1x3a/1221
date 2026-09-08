@@ -1,15 +1,15 @@
 export const VERSION=1;
 export const TTL=12*60*60*1000;
-export const LIMIT=20;
+export const LIMIT=240;
 export const MAX_CHARS=16000;
 export const DEVICE_NAMES=['小米 12 Pro · 1','小米 12 Pro · 2','红米 K60E','红米 K50 Pro'];
 export const PUBLIC_TRANSPORT={urls:['wss://broker.emqx.io:8084/mqtt','wss://broker-cn.emqx.io:8084/mqtt'],username:'',password:''};
 export const token=(bytes=24)=>to64(crypto.getRandomValues(new Uint8Array(bytes)));
 export function to64(bytes){return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
 export function from64(text){if(typeof text!=='string'||!/^[A-Za-z0-9_-]+$/.test(text))throw new Error('连接信息格式不正确');return Uint8Array.from(atob(text.replaceAll('-','+').replaceAll('_','/')),c=>c.charCodeAt(0))}
-export function parseLines(text,maxItems=LIMIT){const lines=String(text).split(/\r?\n/).filter(s=>s.trim().length);if(!lines.length)throw new Error('请至少填写一条信息');if(lines.length>maxItems)throw new Error('一次最多发送 '+maxItems+' 条独立信息，请分次发送');if(lines.some(s=>s.length>4000)||lines.join('').length>MAX_CHARS)throw new Error('内容过长，请分批发送');return lines}
+export function parseLines(text,maxItems=LIMIT){const lines=String(text).split(/\r?\n/).filter(s=>s.trim().length);if(!lines.length)throw new Error('请至少填写一条信息');if(lines.length>maxItems)throw new Error('每部手机最多发送 '+maxItems+' 条独立信息');if(lines.some(s=>s.length>4000)||lines.join('').length>MAX_CHARS)throw new Error('内容过长，请减少后发送');return lines}
 export function hasSendableText(text){return String(text??'').split(/\r?\n/).some(line=>line.trim().length>0)}
-export function chunkItems(items){const chunks=[];for(let i=0;i<items.length;i+=LIMIT)chunks.push(items.slice(i,i+LIMIT));return chunks}
+export function replaceDeviceEntries(entries,replacements){const next=Array.isArray(replacements)?replacements:[replacements],ids=new Set(next.map(row=>row?.device).filter(Boolean));return [...(Array.isArray(entries)?entries:[]).filter(row=>!ids.has(row?.device)),...next.filter(row=>row?.device)]}
 export function validBatch(batch){return !!batch&&typeof batch.id==='string'&&/^[A-Za-z0-9_-]{12,64}$/.test(batch.id)&&Number.isFinite(batch.createdAt)&&batch.createdAt>Date.now()-TTL&&batch.createdAt<Date.now()+60000&&Array.isArray(batch.items)&&batch.items.length>0&&batch.items.length<=LIMIT&&batch.items.every(t=>typeof t==='string'&&t.trim()&&t.length<=4000)&&batch.items.join('').length<=MAX_CHARS}
 export function pairingCode(pair){return to64(new TextEncoder().encode(JSON.stringify(pair)))}
 export function validTransport(value){
