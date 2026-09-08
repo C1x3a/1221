@@ -29,6 +29,10 @@ function renderSync(){
 function reconcileController(){const ids=new Set(prefs.controller.devices.map(d=>d.id));for(const id of [...selected])if(!ids.has(id))selected.delete(id);if(!selected.size)prefs.controller.devices.forEach(d=>selected.add(d.id));if(!prefs.controller.groups.some(g=>g.id===activeGroup))activeGroup=null;saveSelection()}
 function applySyncedController(controller,{restart=true}={}){const oldHost=prefs.controller?.host;prefs.controller=controller;migrateController(prefs.controller);reconcileController();save();if(role==='controller'&&$('controller')&&!$('controller').hidden){renderDevices();renderDifferent();updateCompose();renderOutbox();if(restart||oldHost!==controller.host)bootNetwork()}}
 function controllerChanged(){save();if(!prefs.sync?.code)return;syncDirty=true;syncConflict=null;syncNotice='';renderSync();clearTimeout(syncTimer);syncTimer=setTimeout(()=>pushSharedSettings(),900)}
+function missingSharedSettings(err){return err?.message==='没有找到这个同步码对应的设置'}
+async function seedSharedSettings(){
+ const result=await putSettings(prefs.sync.code,0,prefs.controller);prefs.sync.revision=result.revision;prefs.sync.updatedAt=result.updatedAt;syncDirty=false;syncConflict=null;syncNotice='';save();return result;
+}
 async function pushSharedSettings(expectedRevision=prefs.sync?.revision||0){
  if(!prefs.sync?.code||syncBusy)return;syncBusy=true;syncNotice='正在加密并保存设置…';renderSync();
  try{const result=await putSettings(prefs.sync.code,expectedRevision,prefs.controller);prefs.sync.revision=result.revision;prefs.sync.updatedAt=result.updatedAt;syncDirty=false;syncConflict=null;syncNotice='';save();toast('共享设置已更新')}
@@ -38,7 +42,7 @@ async function pushSharedSettings(expectedRevision=prefs.sync?.revision||0){
 async function pullSharedSettings({force=false,restart=true}={}){
  if(!prefs.sync?.code||syncBusy)return;syncBusy=true;syncNotice='正在读取共享设置…';renderSync();
  try{const remote=await fetchSettings(prefs.sync.code);if(remote.revision>(prefs.sync.revision||0)){if(syncDirty&&!force){syncConflict={revision:remote.revision};syncNotice=''}else{applySyncedController(remote.controller,{restart});prefs.sync.revision=remote.revision;prefs.sync.updatedAt=remote.updatedAt;syncDirty=false;syncConflict=null;syncNotice='';save();if(restart)toast('已载入另一台电脑的最新设置')}}else{prefs.sync.revision=remote.revision;prefs.sync.updatedAt=remote.updatedAt;syncNotice='';save();if(syncDirty)queueMicrotask(()=>pushSharedSettings())}}
- catch(err){syncNotice=err.message}
+ catch(err){if(missingSharedSettings(err)&&(prefs.sync?.revision||0)>0){try{await seedSharedSettings();toast('旧同步设置已迁移到新服务器')}catch(seedError){syncNotice=seedError.message}}else syncNotice=err.message}
  finally{syncBusy=false;renderSync()}
 }
 function openSyncJoin(){syncKey(prefs.sync?.code||createSyncCode());$('sync-dialog-title').textContent='输入已有同步码';$('sync-dialog-help').textContent='把另一台电脑上复制的同步码粘贴到这里。读取后会替换本机的手机名称、配对和分组。';$('sync-code').readOnly=false;$('sync-code').value='';$('sync-error').textContent='';$('sync-submit').hidden=false;$('sync-submit').textContent='读取共享设置';$('sync-dialog-copy').hidden=true;$('sync-dialog').showModal();$('sync-code').focus()}
@@ -357,7 +361,7 @@ if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js',{scope
 async function initialize(){try{
  if(location.hash.startsWith('#pair=')){const pair=readPair(location.hash);if(prefs.phone?.device!==pair.device||prefs.phone?.host!==pair.host||prefs.phone?.key!==pair.key){work.inbox=[];selectedBatch=null}prefs.phone=pair;prefs.role='phone';save()}
  role=location.hash==='#phone'||prefs.role==='phone'?'phone':'controller';
- if(role==='controller'){ensureController();if(prefs.sync?.code){syncNotice='正在读取共享设置…';renderSync();try{const remote=await fetchSettings(prefs.sync.code);if(remote.revision>(prefs.sync.revision||0)){prefs.controller=remote.controller;migrateController(prefs.controller);reconcileController()}prefs.sync.revision=remote.revision;prefs.sync.updatedAt=remote.updatedAt;syncNotice='';save()}catch(err){syncNotice=err.message}}}
+ if(role==='controller'){ensureController();if(prefs.sync?.code){syncNotice='正在读取共享设置…';renderSync();try{const remote=await fetchSettings(prefs.sync.code);if(remote.revision>(prefs.sync.revision||0)){prefs.controller=remote.controller;migrateController(prefs.controller);reconcileController()}prefs.sync.revision=remote.revision;prefs.sync.updatedAt=remote.updatedAt;syncNotice='';save()}catch(err){if(missingSharedSettings(err)&&(prefs.sync.revision||0)>0){try{await seedSharedSettings()}catch(seedError){syncNotice=seedError.message}}else syncNotice=err.message}}}
  setRole(role);renderSync();
 }catch(err){connection('无法读取连接信息：'+err.message,true);$('controller').hidden=true;$('phone').hidden=false;$('phone-setup').hidden=false}}
 initialize();
