@@ -8,6 +8,7 @@ export const token=(bytes=24)=>to64(crypto.getRandomValues(new Uint8Array(bytes)
 export function to64(bytes){return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'')}
 export function from64(text){if(typeof text!=='string'||!/^[A-Za-z0-9_-]+$/.test(text))throw new Error('连接信息格式不正确');return Uint8Array.from(atob(text.replaceAll('-','+').replaceAll('_','/')),c=>c.charCodeAt(0))}
 export function parseLines(text,maxItems=LIMIT){const lines=String(text).split(/\r?\n/).filter(s=>s.trim().length);if(!lines.length)throw new Error('请至少填写一条信息');if(lines.length>maxItems)throw new Error('一次最多发送 '+maxItems+' 条独立信息，请分次发送');if(lines.some(s=>s.length>4000)||lines.join('').length>MAX_CHARS)throw new Error('内容过长，请分批发送');return lines}
+export function hasSendableText(text){return String(text??'').split(/\r?\n/).some(line=>line.trim().length>0)}
 export function chunkItems(items){const chunks=[];for(let i=0;i<items.length;i+=LIMIT)chunks.push(items.slice(i,i+LIMIT));return chunks}
 export function validBatch(batch){return !!batch&&typeof batch.id==='string'&&/^[A-Za-z0-9_-]{12,64}$/.test(batch.id)&&Number.isFinite(batch.createdAt)&&batch.createdAt>Date.now()-TTL&&batch.createdAt<Date.now()+60000&&Array.isArray(batch.items)&&batch.items.length>0&&batch.items.length<=LIMIT&&batch.items.every(t=>typeof t==='string'&&t.trim()&&t.length<=4000)&&batch.items.join('').length<=MAX_CHARS}
 export function pairingCode(pair){return to64(new TextEncoder().encode(JSON.stringify(pair)))}

@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseLines,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,validTransport,PUBLIC_TRANSPORT,TTL} from './core.mjs';
+import {parseLines,hasSendableText,chunkItems,copyBatch,token,seal,unseal,pairingCode,readPair,validBatch,validTransport,PUBLIC_TRANSPORT,TTL} from './core.mjs';
 
 test('four independent records preserve order, duplicate values, punctuation and spaces',async()=>{
  const items=parseLines('姓名示例\r\n\r\n  地址 示例，A号  \n姓名示例\n尾号 0001');
  assert.deepEqual(items,['姓名示例','  地址 示例，A号  ','姓名示例','尾号 0001']);
  const written=[],intervals=[];const result=await copyBatch(items,{write:async t=>written.push(t),wait:async ms=>intervals.push(ms)});
  assert.deepEqual(written,items);assert.deepEqual(intervals,[1500,1500,1500]);assert.equal(result.copied,4);assert.equal(result.error,null);
+});
+test('empty per-phone content is detected and can be skipped without blocking other phones',()=>{
+ assert.equal(hasSendableText(' \n\t\r\n'),false);
+ assert.equal(hasSendableText('\n姓名示例\n'),true);
+ assert.equal(hasSendableText(null),false);
 });
 test('browser denial on the third item stops and reports only two completed writes',async()=>{
  let attempts=0;const result=await copyBatch(['a','b','c','d'],{write:async()=>{if(++attempts===3)throw Object.assign(new Error(),{name:'NotAllowedError'})},wait:async()=>{}});

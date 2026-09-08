@@ -1,4 +1,4 @@
-import {TTL,DEVICE_NAMES,PUBLIC_TRANSPORT,token,parseLines,chunkItems,validBatch,validPair,validTransport,pairingCode,readPair,seal,unseal,copyBatch} from './core.mjs';
+import {TTL,DEVICE_NAMES,PUBLIC_TRANSPORT,token,parseLines,hasSendableText,chunkItems,validBatch,validPair,validTransport,pairingCode,readPair,seal,unseal,copyBatch} from './core.mjs';
 import {migrateController,addNamedDevices,renameDevice,removeDevice,saveGroup,groupSelection} from './manage.mjs';
 import {extractPeople,peopleToText,idShape} from './extract.mjs';
 import {createSyncCode,syncKey,fetchSettings,putSettings} from './sync.mjs';
@@ -225,14 +225,15 @@ function applyExtraction(){
  }catch(err){$('extract-summary').textContent=err.message}
 }
 function renderDifferent(){
- $('different-compose').replaceChildren(...prefs.controller.devices.filter(d=>selected.has(d.id)).map(d=>{const wrap=el('div'),label=el('label','',d.name+' · 每行一条'),input=el('textarea');input.id='draft-'+d.id;input.rows=4;input.maxLength=17000;input.placeholder='填写只发给这部手机的内容';input.value=work.drafts[d.id]||'';input.spellcheck=false;label.htmlFor=input.id;input.oninput=()=>{work.drafts[d.id]=input.value;save();updateCompose()};wrap.append(label,input);return wrap}));
+ $('different-compose').replaceChildren(...prefs.controller.devices.filter(d=>selected.has(d.id)).map(d=>{const wrap=el('div'),label=el('label','',d.name+' · 每行一条（留空不发送）'),input=el('textarea');input.id='draft-'+d.id;input.rows=4;input.maxLength=17000;input.placeholder='填写只发给这部手机的内容；留空则跳过';input.value=work.drafts[d.id]||'';input.spellcheck=false;label.htmlFor=input.id;input.oninput=()=>{work.drafts[d.id]=input.value;save();updateCompose()};wrap.append(label,input);return wrap}));
 }
 function updateCompose(){
  const same=work.compose!=='different';$('same-mode').setAttribute('aria-pressed',String(same));$('different-mode').setAttribute('aria-pressed',String(!same));$('same-compose').hidden=!same;$('different-compose').hidden=same;
  const count=String(work.shared||'').split(/\r?\n/).filter(x=>x.trim()).length;
- $('item-count').textContent=same?count+' 条':selected.size+' 部手机';
+ const eligible=same?(hasSendableText(work.shared)?selected.size:0):prefs.controller.devices.filter(d=>selected.has(d.id)&&hasSendableText(work.drafts[d.id])).length;
+ $('item-count').textContent=same?count+' 条':eligible+' 部有内容';
  $('preview').replaceChildren();if(same&&count){for(let i=0;i<Math.min(count,20);i++)$('preview').append(el('span','','第 '+(i+1)+' 条'))}
- $('send').textContent='发送给 '+selected.size+' 部手机';$('send').disabled=!selected.size||sending;
+ $('send').textContent='发送给 '+eligible+' 部手机';$('send').disabled=!eligible||sending;
  $('selected-count').textContent='已选 '+selected.size+' / '+(prefs.controller?.devices.length||0)+' 台';
 }
 const statusText={queued:'等待连接 · 保存在当前电脑标签页',sent:'已发出 · 等待手机回执',received:'手机已接收 · 等待点击复制',copying:'手机正在逐条复制',copied:'逐条复制完成 · 历史待手机确认',confirmed:'手机已确认全部进入历史',error:'需要处理',deleted:'手机已删除这批内容'};
@@ -250,10 +251,11 @@ function renderOutbox(){
 }
 async function sendSelected(){
  if(!selected.size||sending)return;
- clearExpired();const prepared=[];
- try{for(const d of prefs.controller.devices.filter(x=>selected.has(x.id))){let items;try{items=parseLines(work.compose==='different'?work.drafts[d.id]||'':work.shared||'',240)}catch(err){throw new Error(d.name+'：'+err.message)}const chunks=chunkItems(items);if(work.outbox.filter(x=>x.device===d.id&&!finished(x.status)).length+chunks.length>12)throw new Error(d.name+' 最多同时等待 12 批，请先处理已有内容或减少本次内容');for(const items of chunks)prepared.push({device:d.id,batch:{id:token(18),createdAt:Date.now(),items},status:'queued',copied:0})}}
+ clearExpired();const prepared=[],targets=prefs.controller.devices.filter(x=>selected.has(x.id));let skipped=0;
+ try{for(const d of targets){const source=work.compose==='different'?work.drafts[d.id]||'':work.shared||'';if(!hasSendableText(source)){skipped++;continue}let items;try{items=parseLines(source,240)}catch(err){throw new Error(d.name+'：'+err.message)}const chunks=chunkItems(items);if(work.outbox.filter(x=>x.device===d.id&&!finished(x.status)).length+chunks.length>12)throw new Error(d.name+' 最多同时等待 12 批，请先处理已有内容或减少本次内容');for(const items of chunks)prepared.push({device:d.id,batch:{id:token(18),createdAt:Date.now(),items},status:'queued',copied:0})}}
  catch(err){feedback(err.message,true);return}
- work.outbox.push(...prepared);save();renderOutbox();feedback('已为 '+new Set(prepared.map(x=>x.device)).size+' 部手机建立 '+prepared.length+' 批发送任务。请查看下方接收进度。');
+ if(!prepared.length){feedback('所选手机的发送内容均为空，本次没有发送。',true);return}
+ work.outbox.push(...prepared);save();renderOutbox();feedback('已为 '+new Set(prepared.map(x=>x.device)).size+' 部手机建立 '+prepared.length+' 批发送任务'+(skipped?'；已跳过 '+skipped+' 部内容为空的手机。':'。')+' 请查看下方接收进度。');
  sending=true;updateCompose();try{for(const device of new Set(prepared.map(x=>x.device)))await flushDevice(device)}finally{sending=false;updateCompose()}
 }
 function openPair(device){
