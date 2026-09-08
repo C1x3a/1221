@@ -2,14 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
-import {createSyncCode,syncKey,workspaceId,encryptController,decryptController,fetchSettings,putSettings} from './sync.mjs';
+import {SYNC_API,createSyncCode,syncKey,workspaceId,encryptController,decryptController,fetchSettings,putSettings} from './sync.mjs';
 
 const controller={host:'c1clip-abcdefghijklmnopqrstuvwx',devices:[{id:'dabcdefghijklmnop',name:'小米 12 Pro · 1',key:'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'}],groups:[{id:'gabcdefghijklmnop',name:'家里',members:['dabcdefghijklmnop']}]};
 
 test('sync code encrypts and decrypts controller settings only',async()=>{
+ assert.equal(SYNC_API,'https://c1clip-sync.netlify.app/api/settings');
  const code=createSyncCode();assert.equal(syncKey(code).bytes.length,32);assert.match(await workspaceId(code),/^[a-f0-9]{64}$/);
  const envelope=await encryptController(code,controller);assert.notEqual(envelope.ciphertext.includes('小米'),true);assert.deepEqual(await decryptController(code,envelope),controller);
  await assert.rejects(()=>decryptController(createSyncCode(),envelope),/同步码不正确/);
+});
+
+test('network failures have a readable Chinese message',async()=>{
+ await assert.rejects(()=>fetchSettings(createSyncCode(),{fetcher:async()=>{throw new TypeError('Failed to fetch')}}),/无法连接同步服务器/);
 });
 
 test('client transports revisions and handles conflicts',async()=>{

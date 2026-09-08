@@ -1,6 +1,6 @@
 import {from64,to64} from './core.mjs';
 
-export const SYNC_API='https://multi-clipboard-sync.moriah-ipsumgr.chatgpt.site/api/settings';
+export const SYNC_API='https://c1clip-sync.netlify.app/api/settings';
 const PREFIX='C1S1.';
 const AAD=new TextEncoder().encode('c1clip-controller-settings-v1');
 
@@ -36,13 +36,13 @@ export async function decryptController(code,envelope){
 
 async function responseJson(response){try{return await response.json()}catch{return {}}}
 export async function fetchSettings(code,{fetcher=fetch,api=SYNC_API}={}){
- const id=await workspaceId(code),response=await fetcher(api+'/'+id,{method:'GET',cache:'no-store'}),data=await responseJson(response);
+ const id=await workspaceId(code);let response;try{response=await fetcher(api+'/'+id,{method:'GET',cache:'no-store'})}catch{throw new Error('无法连接同步服务器，请检查网络后重试')};const data=await responseJson(response);
  if(response.status===404)throw new Error('没有找到这个同步码对应的设置');
  if(!response.ok)throw new Error('暂时无法读取共享设置，请稍后重试');
  return {revision:data.revision,updatedAt:data.updatedAt,controller:await decryptController(code,data.envelope)};
 }
 export async function putSettings(code,expectedRevision,controller,{fetcher=fetch,api=SYNC_API}={}){
- const id=await workspaceId(code),envelope=await encryptController(code,controller),response=await fetcher(api+'/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedRevision,envelope})}),data=await responseJson(response);
+ const id=await workspaceId(code),envelope=await encryptController(code,controller);let response;try{response=await fetcher(api+'/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({expectedRevision,envelope})})}catch{throw new Error('无法连接同步服务器，请检查网络后重试')};const data=await responseJson(response);
  if(response.status===409){const error=new Error('另一台电脑已经修改了共享设置');error.name='SyncConflict';error.revision=data.revision;throw error}
  if(!response.ok)throw new Error('暂时无法保存共享设置，请稍后重试');
  return {revision:data.revision,updatedAt:data.updatedAt};
