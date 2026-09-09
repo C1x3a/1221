@@ -1,4 +1,4 @@
-const CACHE='c1clip-shell-v7';
+const CACHE='c1clip-shell-v8';
 const ASSETS=['./','./index.html','./style.css','./app.mjs','./core.mjs','./manage.mjs','./extract.mjs','./assign.mjs','./sync.mjs','./vendor/mqtt.min.js','./vendor/qrcode.js','./icon-192.png','./icon-512.png','./manifest.webmanifest'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)))});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('c1clip-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});

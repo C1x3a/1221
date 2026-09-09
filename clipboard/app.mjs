@@ -13,6 +13,7 @@ work.inbox=(Array.isArray(work.inbox)?work.inbox:[]).filter(x=>validBatch(x.batc
 const latestByDevice=rows=>[...rows].sort((a,b)=>b.batch.createdAt-a.batch.createdAt).filter((row,index,all)=>all.findIndex(item=>item.device===row.device)===index);
 work.outbox=latestByDevice(work.outbox);work.inbox=latestByDevice(work.inbox);
 work.drafts=work.drafts||{};
+let networkBootAt=0,resumeTimer=null,wasHidden=false;
 let role='controller',mqttClients=[],generation=0,mqttReady=false,phoneConn=null,copying=false,sending=false,stopCopy=false,installPrompt=null,toastTimer;
 const channels=new Map(),selected=new Set(),receipts=new Map();
 let selectedInitialized=false,activeGroup=work.activeGroup||null,editingDevice=null,editingGroup=null,groupMembers=new Set(),extractRows=[],extractSegments=[],assignmentRows=[],extractTimer,viewTimer,syncTimer,syncBusy=false,syncDirty=false,syncConflict=null,syncNotice='';
@@ -78,8 +79,9 @@ function shutdown(){
 }
 async function publishEncrypted(topic,secret,payload){
  const clients=mqttClients.filter(client=>client.c1ready&&client.connected);if(!mqttReady||!clients.length)throw new Error('连接服务已断开');
- const packet=await seal(secret,payload),body=JSON.stringify(packet);
- await Promise.any(clients.map(client=>new Promise((resolve,reject)=>client.publish(topic,body,{qos:1,retain:false},err=>err?reject(err):resolve())))).catch(()=>{throw new Error('连接服务已断开')});
+ const gen=generation,packet=await seal(secret,payload),body=JSON.stringify(packet);
+ if(gen!==generation)throw new Error('连接已更新');
+ await Promise.any(clients.map(client=>new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('发送超时')),10000);try{client.publish(topic,body,{qos:1,retain:false},err=>{clearTimeout(timer);err?reject(err):resolve()})}catch(err){clearTimeout(timer);reject(err)}}))).catch(()=>{throw new Error('连接服务已断开')});
 }
 function decodePacket(payload){return JSON.parse(new TextDecoder().decode(payload))}
 function updateNetwork(){
@@ -88,6 +90,7 @@ function updateNetwork(){
   if(mqttReady)connection((activeBrokerCount()>1?'双节点在线，':'连接服务正常，')+(n?n+' 部手机在线':'等待手机上线'));
   for(const d of prefs.controller?.devices||[]){const s=$('device-state-'+d.id);if(s){s.textContent=alive(channels.get(d.id))?'在线':'未连接';s.className='device-status'+(alive(channels.get(d.id))?' online':'')}}
  }else if(alive(phoneConn))connection('已连接电脑，可以接收信息');
+ else if(prefs.phone)connection('配对已保留，正在恢复连接；请保持电脑页面打开。',true);
 }
 function networkError(err){
  const text=String(err?.message||err||'');
@@ -95,7 +98,7 @@ function networkError(err){
  else connection('连接服务暂时不可达，正在自动重连免费节点。',true);
 }
 function bootNetwork(){
- shutdown();const gen=generation;
+ shutdown();networkBootAt=Date.now();const gen=generation;
  if(!window.mqtt||!crypto.subtle){connection('当前浏览器版本过旧，无法使用加密连接服务。',true);return}
  if(role==='phone'&&!prefs.phone){connection('等待配对：请扫描电脑上对应手机的二维码');return}
  if(role==='phone'&&!validPair(prefs.phone)){connection('这部手机使用旧版配对，请回电脑重新扫码。',true);return}
@@ -123,7 +126,8 @@ async function sendToPhone(device,payload){const link=channels.get(device.id);if
 async function sendToController(payload){const pair=prefs.phone;if(!mqttReady||!phoneConn)return;await publishEncrypted(phoneOutTopic(pair),pair.key,{...payload,session:phoneConn.session})}
 async function handleControllerMessage(topic,payload){
  const parts=topic.split('/');if(parts.length!==6||parts[0]!=='c1clip'||parts[1]!=='v2'||parts[2]!==prefs.controller.host||parts[3]!=='device'||parts[5]!=='out')return;
- const d=prefs.controller.devices.find(d=>d.id===parts[4]);if(!d)return;let msg;try{msg=await unseal(d.key,decodePacket(payload))}catch{return}
+ const gen=generation,d=prefs.controller.devices.find(d=>d.id===parts[4]);if(!d)return;let msg;try{msg=await unseal(d.key,decodePacket(payload))}catch{return}
+ if(gen!==generation)return;
  if(typeof msg.session!=='string'||msg.session.length<12||msg.session.length>64)return;
  let link=channels.get(d.id);if(!link||link.session!==msg.session){link={device:d.id,session:msg.session,open:true,authenticated:true,lastSeen:Date.now(),flushing:false};channels.set(d.id,link)}else link.lastSeen=Date.now();
  if(msg.t==='hello'||msg.t==='ping'){await sendToPhone(d,{t:msg.t==='hello'?'ready':'pong',name:d.name});updateNetwork();flushDevice(d.id);return}
@@ -137,8 +141,8 @@ async function handleControllerMessage(topic,payload){
  }
 }
 async function handlePhoneMessage(topic,payload){
- const pair=prefs.phone;if(topic!==phoneInTopic(pair)||!phoneConn)return;let msg;try{msg=await unseal(pair.key,decodePacket(payload))}catch{return}
- if(msg.session!==phoneConn.session)return;phoneConn.lastSeen=Date.now();
+ const gen=generation,pair=prefs.phone;if(!pair||topic!==phoneInTopic(pair)||!phoneConn)return;let msg;try{msg=await unseal(pair.key,decodePacket(payload))}catch{return}
+ if(gen!==generation||!phoneConn||msg.session!==phoneConn.session)return;phoneConn.lastSeen=Date.now();
  if(msg.t==='ready'){
   receiveName(msg.name);phoneConn.authenticated=true;connection('已连接电脑，可以接收信息');
   const current=currentPhoneBatch();if(current)await phoneReceipt(current);
@@ -382,19 +386,39 @@ $('stop-copy').onclick=()=>{stopCopy=true;$('stop-copy').disabled=true;$('copy-s
 $('confirm-history').onclick=()=>{const entry=currentPhoneBatch();if(!entry||copying||entry.copied!==entry.batch.items.length)return;entry.status='confirmed';save();renderInbox();phoneReceipt(entry)};
 $('clear-batch').onclick=()=>{const entry=currentPhoneBatch();if(!entry||copying)return;const receipt={t:'receipt',id:entry.batch.id,status:'deleted',copied:entry.copied||0};receipts.set(entry.batch.id,receipt);if(receipts.size>100)receipts.delete(receipts.keys().next().value);if(alive(phoneConn))sendToController(receipt).catch(()=>{});work.inbox=work.inbox.filter(e=>e!==entry);save();renderInbox()};
 for(const id of ['interval','copy-method']){$(id).value=prefs[id]||$(id).value;$(id).onchange=()=>{prefs[id]=$(id).value;save()}}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible'){if(copying)stopCopy=true}else{if(!mqttReady)bootNetwork();else if(role==='phone'&&!alive(phoneConn))connectPhone();if(role==='controller'&&prefs.sync?.code&&!syncDirty)pullSharedSettings();updateNetwork()}});
+function resumeNetwork(force=false){
+ if(document.visibilityState!=='visible')return;
+ if(!force&&!wasHidden&&mqttReady&&(role!=='phone'||alive(phoneConn)))return;
+ clearTimeout(resumeTimer);resumeTimer=setTimeout(()=>{
+  resumeTimer=null;if(document.visibilityState!=='visible')return;
+  wasHidden=false;bootNetwork();
+  if(role==='controller'&&prefs.sync?.code&&!syncDirty)pullSharedSettings();
+ },250);
+}
+function checkPhoneConnection(){
+ if(!prefs.phone)return;
+ if(alive(phoneConn)){sendToController({t:'ping'}).catch(()=>{});return}
+ // Rebuild sockets that still claim to be connected after Android suspension.
+ if(Date.now()-networkBootAt>=30000){bootNetwork();return}
+ if(mqttReady&&(!phoneConn||Date.now()-(phoneConn.lastAttempt||0)>12000))connectPhone();
+ updateNetwork();
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible'){wasHidden=true;if(copying)stopCopy=true;save()}else resumeNetwork(true)});
+window.addEventListener('pageshow',event=>{if(event.persisted)resumeNetwork(true)});
+window.addEventListener('focus',()=>resumeNetwork());
+document.addEventListener('freeze',()=>{wasHidden=true;if(copying)stopCopy=true;save()});
+document.addEventListener('resume',()=>resumeNetwork(true));
 window.addEventListener('blur',()=>{if(copying)stopCopy=true});
 window.addEventListener('beforeunload',event=>{if(copying||(role==='controller'&&work.outbox.some(e=>!finished(e.status)))){event.preventDefault();event.returnValue=''}});
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event});
 $('install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();installPrompt=null}else{toast(/MicroMessenger/i.test(navigator.userAgent)?'请将配对链接在手机浏览器打开，再从浏览器菜单添加到桌面。':'在浏览器菜单中选择“添加到主屏幕”或“安装应用”。')}};
-window.addEventListener('online',()=>{if(!copying)bootNetwork()});
+window.addEventListener('online',()=>resumeNetwork(true));
 setInterval(()=>{
  if(document.visibilityState!=='visible')return;
  if(role==='controller'){
   for(const [id,link] of channels){if(Date.now()-link.lastSeen>35000){channels.delete(id);continue}flushDevice(id)}updateNetwork();
  }else{
-  if(alive(phoneConn))sendToController({t:'ping'}).catch(()=>{});
-  else if(mqttReady&&(!phoneConn||Date.now()-(phoneConn.lastAttempt||0)>12000))connectPhone()
+  checkPhoneConnection()
  }
 },6000);
 setInterval(()=>{if(!copying){clearExpired();if(role==='controller')renderOutbox();else renderInbox()}},60000);
