@@ -14,11 +14,10 @@
 .persons{display:grid;gap:7px;margin-top:9px}.person{display:flex;gap:10px;align-items:center;background:#f8fafc;border:1px solid #edf1f6;border-radius:11px;padding:9px}.idx{width:25px;height:25px;border-radius:7px;background:#e9f1ff;color:#1e64c8;display:grid;place-items:center;font-size:11px;font-weight:800}.name{font-weight:750;font-size:14px}.id{margin-left:auto;font-size:11px;color:#8290a5}
 .copyline{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1f5;font-size:13px}.copyline:last-child{border-bottom:0}.copybtn{border:0;border-radius:8px;background:#edf4ff;color:#155dc1;padding:6px 10px;font-weight:700}
 .settings{display:grid;gap:10px}.setting{display:flex;align-items:center;justify-content:space-between;font-size:13px}.seg{display:flex;padding:3px;background:#edf2f7;border-radius:10px}.seg button{border:0;background:transparent;padding:6px 10px;border-radius:8px;font-size:12px}.seg button.on{background:#fff;box-shadow:0 2px 8px #233f6517;color:#1769e0;font-weight:800}.toggle{width:44px;height:25px;border-radius:20px;background:#c7d0dc;padding:3px;cursor:pointer}.toggle i{display:block;width:19px;height:19px;border-radius:50%;background:#fff;transition:.18s}.toggle.on{background:#1769e0}.toggle.on i{transform:translateX(19px)}
-.platforms{display:grid;grid-template-columns:1fr 1fr;gap:10px}.platform{border:0;border-radius:14px;padding:13px 10px;font-size:15px;font-weight:800;color:#fff;box-shadow:0 8px 18px #123e7317}.maoyan{background:linear-gradient(135deg,#ff5a5f,#ff3341)}.pxq{background:linear-gradient(135deg,#7447ef,#5936d4)}.platform small{display:block;font-size:10px;font-weight:600;opacity:.86;margin-top:3px}
-select{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 8px;color:#334155;max-width:190px}
-.note{font-size:11px;line-height:1.55;color:#708197;margin-top:9px}.good{color:#16834b;font-weight:700}.log{margin-top:10px;background:#0f1f33;color:#d9e8ff;border-radius:12px;padding:10px;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:78px;max-height:150px;overflow:auto}.log div{opacity:.93}.log .ok{color:#78e2a7}.log .warn{color:#ffd27a}
-.float{position:fixed;z-index:10;width:245px;left:calc(50% - 122px);bottom:18px;background:rgba(22,36,56,.94);backdrop-filter:blur(10px);color:#fff;border-radius:15px;box-shadow:0 14px 40px #0714264f;padding:9px 10px;touch-action:none;user-select:none}.float-head{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;cursor:move}.dot{width:7px;height:7px;border-radius:50%;background:#76e49f}.dot.paused{background:#ffd36e}.float-text{font-size:10px;color:#d5dfec;margin:5px 0 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.float-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px}.float button{border:0;border-radius:8px;padding:6px 4px;font-size:10px;font-weight:800;background:#263e5d;color:#fff}.float button.primary{background:#1769e0}.float .drag{margin-left:auto;color:#9eb0c8;font-size:14px}
-.progress{height:4px;background:#314865;border-radius:10px;overflow:hidden;margin-top:6px}.bar{height:100%;width:0;background:#67d98f;transition:width .2s}.statuspill{font-size:10px;border-radius:999px;padding:3px 6px;background:#263e5d;color:#cfe0f4}
+.platforms{display:grid;grid-template-columns:1fr 1fr;gap:10px}.platform{border:0;border-radius:14px;padding:13px 10px;font-size:15px;font-weight:800;color:#fff;box-shadow:0 8px 18px #123e7317}.maoyan{background:linear-gradient(135deg,#ff5a5f,#ff3341)}.pxq{background:linear-gradient(135deg,#7447ef,#5936d4)}.platform small{display:block;font-size:10px;font-weight:600;opacity:.9;margin-top:3px}
+select{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 8px;color:#334155;max-width:190px}.note{font-size:11px;line-height:1.55;color:#708197;margin-top:9px}.good{color:#16834b;font-weight:700}
+.log{margin-top:10px;background:#0f1f33;color:#d9e8ff;border-radius:12px;padding:10px;font:11px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:78px;max-height:150px;overflow:auto}.log div{opacity:.93}.log .ok{color:#78e2a7}.log .warn{color:#ffd27a}
+.float{position:fixed;z-index:10;width:168px;height:168px;left:calc(50% - 84px);bottom:18px;background:rgba(22,36,56,.95);backdrop-filter:blur(10px);color:#fff;border-radius:18px;box-shadow:0 14px 40px #0714264f;padding:11px;touch-action:none;user-select:none;display:flex;flex-direction:column}.float-head{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;cursor:move}.float-title{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.dot{width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#76e49f}.dot.paused{background:#ffd36e}.statuspill{margin-left:auto;font-size:9px;border-radius:999px;padding:3px 6px;background:#263e5d;color:#cfe0f4}.drag{color:#9eb0c8;font-size:13px}.float-text{font-size:10px;line-height:1.35;color:#d5dfec;margin:11px 0 8px;min-height:41px;overflow:hidden}.progress{height:5px;background:#314865;border-radius:10px;overflow:hidden}.bar{height:100%;width:0;background:#67d98f;transition:width .2s}.float-actions{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:6px}.float button{border:0;border-radius:9px;padding:8px 4px;font-size:10px;font-weight:800;background:#263e5d;color:#fff}.float button.primary{background:#1769e0}.float button.paused{background:#d68b16}
 @media (min-width:700px){.shell{margin-top:16px;margin-bottom:16px;min-height:calc(100vh - 32px);border-radius:24px;box-shadow:0 20px 70px #224b7a22}}
 </style>
 </head>
@@ -66,75 +65,83 @@ select{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7p
     </div>
     <div class="platforms" style="margin-top:12px">
       <button class="platform maoyan" data-platform="猫眼">猫眼<small>识别当前页 → 自动续填全部人员</small></button>
-      <button class="platform pxq" data-platform="票星球">票星球<small>填写 → 勾选 → 确定 → 下一人</small></button>
+      <button class="platform pxq" data-platform="票星球">票星球<small>识别当前页 → 自动续填全部人员</small></button>
     </div>
-    <div class="note"><span class="good">新版逻辑：</span>每一步都先检测当前页面，只执行“这个页面缺少的动作”；不会固定从第一步重放，因此不会出现反复返回。完成当前人员后再进入下一人，全部完成后结束。</div>
+    <div class="note"><span class="good">统一逻辑：</span>猫眼和票星球启动后都先识别当前页面，再判断已经完成到哪一步，只补当前页面缺少的动作；不会固定退回第一步重新执行。</div>
     <div class="log" id="log"><div>等待选择平台…</div></div>
   </section>
 </main>
 
 <div class="float" id="float">
-  <div class="float-head"><span class="dot" id="dot"></span><span id="floatTitle">自动填写待命</span><span class="statuspill" id="counter">0/3</span><span class="drag">⋮⋮</span></div>
+  <div class="float-head"><span class="dot" id="dot"></span><span class="float-title" id="floatTitle">自动填写待命</span><span class="statuspill" id="counter">0/3</span><span class="drag">⋮</span></div>
   <div class="float-text" id="floatText">点击猫眼或票星球直接启动</div>
   <div class="progress"><div class="bar" id="bar"></div></div>
-  <div class="float-actions" style="margin-top:7px"><button id="pause">暂停</button><button class="primary" id="resume">继续</button><button id="switchBtn">切换应用</button></div>
+  <div class="float-actions"><button class="primary" id="pauseToggle">暂停</button><button id="switchBtn">切换应用</button></div>
 </div>
 
 <script>
 const people=['冯璇','张晨','陈宇'];
-const log=document.getElementById('log'),floatBox=document.getElementById('float'),floatTitle=document.getElementById('floatTitle'),floatText=document.getElementById('floatText'),counter=document.getElementById('counter'),bar=document.getElementById('bar'),dot=document.getElementById('dot');
+const log=document.getElementById('log'),floatBox=document.getElementById('float'),floatTitle=document.getElementById('floatTitle'),floatText=document.getElementById('floatText'),counter=document.getElementById('counter'),bar=document.getElementById('bar'),dot=document.getElementById('dot'),pauseToggle=document.getElementById('pauseToggle');
 let delay=5,autoSwitch=true,running=false,paused=false,runToken=0,currentPlatform='',currentIndex=0;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function addLog(t,cls=''){const d=document.createElement('div');d.className=cls;d.textContent=t;log.append(d);log.scrollTop=log.scrollHeight}
+function syncPauseButton(){pauseToggle.textContent=paused?'继续':'暂停';pauseToggle.classList.toggle('paused',paused);pauseToggle.classList.toggle('primary',!paused);dot.classList.toggle('paused',paused)}
 function state(text){floatText.textContent=text;floatTitle.textContent=currentPlatform?currentPlatform+' · 自动填写':'自动填写待命';counter.textContent=Math.min(currentIndex,3)+'/3';bar.style.width=(Math.min(currentIndex,3)/3*100)+'%'}
 async function checkpoint(token){while(paused&&token===runToken)await sleep(120);if(token!==runToken)throw new Error('cancel')}
 function routeFor(platform,screen){
-  const map={entry:['识别当前页面','定位实名信息入口'],list:['识别实名人列表'],form:['识别添加实名人表单'],consent:['识别协议/确认页面'],done:['识别已存在人员','核对缺失人员']};
+  const first=platform+'：识别当前页面';
+  const map={
+    entry:[first,'判断当前页面类型','定位实名信息入口'],
+    list:[first,'确认当前为实名人列表','核对已添加人员'],
+    form:[first,'确认当前为新增实名人表单','检查已填写字段'],
+    consent:[first,'确认当前为协议/确认页面','检查勾选与确认状态'],
+    done:[first,'识别已有人员/部分完成状态','核对缺失人员']
+  };
   return map[screen]||map.entry;
 }
 async function doAction(token,text,cls=''){await checkpoint(token);state(text);addLog('• '+text,cls);await sleep(330)}
 async function run(platform){
-  runToken++;const token=runToken;currentPlatform=platform;currentIndex=0;running=true;paused=false;dot.classList.remove('paused');log.replaceChildren();
+  runToken++;const token=runToken;currentPlatform=platform;currentIndex=0;running=true;paused=false;syncPauseButton();log.replaceChildren();
   const screen=document.getElementById('screen').value;
   try{
-    addLog('启动 '+platform+'：不重置页面，先判断当前状态','ok');
+    addLog('启动 '+platform+'：先识别当前页，不重置、不固定返回','ok');
     for(const a of routeFor(platform,screen))await doAction(token,a);
     for(let i=0;i<people.length;i++){
-      currentIndex=i;await checkpoint(token);
-      const p=people[i];
+      currentIndex=i;await checkpoint(token);const p=people[i];
       await doAction(token,'检查 '+p+' 是否已存在');
       if(screen==='done'&&i===0){await doAction(token,p+' 已存在，跳过重复填写','ok');currentIndex=i+1;continue}
-      await doAction(token,'进入/保持在“新增实名人”页面');
+      await doAction(token,'根据当前页进入/保持“新增实名人”步骤');
       await doAction(token,'填写姓名：'+p);
       await doAction(token,'填写身份证：已匹配第 '+(i+1)+' 组资料');
       if(platform==='票星球'){
+        await doAction(token,'识别当前表单状态，补齐未填写内容');
         await doAction(token,'自动勾选实名/购票协议');
         await doAction(token,'点击“确定”并检查保存结果');
       }else{
+        await doAction(token,'识别当前表单状态，补齐未填写内容');
         await doAction(token,'勾选“我已阅读并同意《实名说明》”');
         await doAction(token,'点击“确认/保存”并检查结果');
       }
-      await doAction(token,p+' 保存成功','ok');
-      currentIndex=i+1;state('准备下一位人员');
-      if(i<people.length-1)await doAction(token,'返回实名人列表 → 添加下一人');
+      await doAction(token,p+' 保存成功','ok');currentIndex=i+1;state('准备下一位人员');
+      if(i<people.length-1)await doAction(token,'识别当前页 → 进入下一位人员添加步骤');
     }
     currentIndex=3;state('全部 3 人填写完成');addLog('✓ 全部人员完成，流程停止，不再返回重放','ok');
     if(autoSwitch){addLog('完成后等待 '+delay+' 秒再切换应用','warn');state('完成 · '+delay+' 秒后切换应用');await sleep(800);await checkpoint(token);addLog('⇄ 预览：执行应用切换（真实 APK 使用 '+delay+' 秒）','ok');state('已切换应用；回到本 App 再点击即可重新启动')}
     else state('全部完成 · 自动切换已关闭');
   }catch(e){if(e.message!=='cancel')addLog('流程异常：'+e.message,'warn')}
-  finally{if(token===runToken){running=false;paused=false;dot.classList.remove('paused')}}
+  finally{if(token===runToken){running=false;paused=false;syncPauseButton()}}
 }
 document.querySelectorAll('.platform').forEach(b=>b.onclick=()=>run(b.dataset.platform));
 document.querySelectorAll('[data-delay]').forEach(b=>b.onclick=()=>{delay=Number(b.dataset.delay);document.querySelectorAll('[data-delay]').forEach(x=>x.classList.toggle('on',x===b));addLog('切换等待设为 '+delay+' 秒')});
 document.getElementById('switchToggle').onclick=e=>{autoSwitch=!autoSwitch;e.currentTarget.classList.toggle('on',autoSwitch);addLog('自动切换应用：'+(autoSwitch?'开启':'关闭'))};
-document.getElementById('pause').onclick=()=>{if(!running)return;paused=true;dot.classList.add('paused');state('已暂停，可拖动悬浮窗或继续')};
-document.getElementById('resume').onclick=()=>{if(!running)return;paused=false;dot.classList.remove('paused');state('继续执行当前步骤')};
+pauseToggle.onclick=()=>{if(!running)return;paused=!paused;syncPauseButton();state(paused?'已暂停，点击同一按钮继续':'继续执行当前步骤');addLog(paused?'Ⅱ 自动填写已暂停':'▶ 自动填写继续','warn')};
 document.getElementById('switchBtn').onclick=()=>{addLog('⇄ 手动切换应用（预览模拟）','warn');state('手动切换应用；流程状态保留')};
 document.querySelectorAll('.copybtn').forEach(b=>b.onclick=()=>{const t=b.previousElementSibling.textContent;navigator.clipboard?.writeText(t).then(()=>{b.textContent='已复制';setTimeout(()=>b.textContent='复制',800)}).catch(()=>{})});
 let dragging=false,dx=0,dy=0;
 function startDrag(x,y){dragging=true;const r=floatBox.getBoundingClientRect();dx=x-r.left;dy=y-r.top;floatBox.style.bottom='auto'}
 function moveDrag(x,y){if(!dragging)return;const maxX=innerWidth-floatBox.offsetWidth-6,maxY=innerHeight-floatBox.offsetHeight-6;floatBox.style.left=Math.max(6,Math.min(maxX,x-dx))+'px';floatBox.style.top=Math.max(6,Math.min(maxY,y-dy))+'px'}
 floatBox.addEventListener('pointerdown',e=>{if(e.target.tagName==='BUTTON')return;startDrag(e.clientX,e.clientY);floatBox.setPointerCapture(e.pointerId)});floatBox.addEventListener('pointermove',e=>moveDrag(e.clientX,e.clientY));floatBox.addEventListener('pointerup',()=>dragging=false);floatBox.addEventListener('pointercancel',()=>dragging=false);
+syncPauseButton();
 </script>
 </body>
 </html>
