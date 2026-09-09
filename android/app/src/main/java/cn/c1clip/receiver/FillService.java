@@ -85,8 +85,7 @@ public final class FillService extends AccessibilityService {
         if(unknownSince==0){unknownSince=now;unknownPhase=0;announce(reason+"，等待页面稳定");schedule(600);return;}
         long waited=now-unknownSince;
         if(unknownPhase==0&&waited>=3500){unknownPhase=1;launch(target);announce("未识别当前页面，已重新打开"+FlowRules.platformName(platform)+"一次");acted(4500);return;}
-        if(unknownPhase==1&&waited>=10000){unknownPhase=2;performGlobalAction(GLOBAL_ACTION_BACK);announce("仍未识别，正在单次返回后重新判断");acted(3500);return;}
-        if(unknownPhase==2&&waited>=16000){paused=true;announce("无法识别当前页面，已暂停；请手动进入首页或人员页后点继续");schedule(800);return;}
+        if(unknownPhase==1&&waited>=10000){unknownPhase=2;paused=true;announce("无法安全识别当前页面，已暂停；请手动进入首页或人员页后点继续");schedule(800);return;}
         schedule(500);
     }
     private void recover(String reason){announce(reason+"，等待当前页面重新识别");lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;acted(900);}
