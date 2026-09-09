@@ -28,10 +28,10 @@ public class ProtocolTest {
         String code=Protocol.b64(p.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));assertEquals("01",Protocol.pair("https://example.org/#pair="+code).getString("name"));p.getJSONObject("broker").put("urls",new JSONArray().put("ws://example.org/mqtt"));String bad=Protocol.b64(p.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));assertThrows(Exception.class,()->Protocol.pair(bad));
     }
     @Test public void onlyRecognizesTheFourSuppliedPages(){
-        assertEquals(FlowRules.Step.HOME,FlowRules.detect(Set.of("我的","首页","电影/影院")));
-        assertEquals(FlowRules.Step.PROFILE,FlowRules.detect(Set.of("我的订单","观演人信息")));
-        assertEquals(FlowRules.Step.LIST,FlowRules.detect(Set.of("观演人信息","+添加/修改观演人信息")));
-        assertEquals(FlowRules.Step.FORM,FlowRules.detect(Set.of("添加观演人信息","姓名","证件号","身份证")));
-        assertEquals(FlowRules.Step.UNKNOWN,FlowRules.detect(Set.of("立即购买","提交订单","姓名","证件号")));
+        assertEquals(FlowRules.Step.HOME,FlowRules.detect(FlowRules.Platform.MAOYAN,Set.of("我的","首页","电影/影院")));
+        assertEquals(FlowRules.Step.PROFILE,FlowRules.detect(FlowRules.Platform.MAOYAN,Set.of("我的订单","观演人信息")));
+        assertEquals(FlowRules.Step.LIST,FlowRules.detect(FlowRules.Platform.MAOYAN,Set.of("观演人信息","+添加/修改观演人信息")));
+        assertEquals(FlowRules.Step.FORM,FlowRules.detect(FlowRules.Platform.MAOYAN,Set.of("添加观演人信息","姓名","证件号","身份证")));
+        assertEquals(FlowRules.Step.UNKNOWN,FlowRules.detect(FlowRules.Platform.MAOYAN,Set.of("立即购买","提交订单","姓名","证件号")));
     }
 }
