@@ -39,6 +39,8 @@ public final class FillService extends AccessibilityService {
         JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0;boolean pending=false;
         if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");}
         if(index<0||index>s.people.size())throw new Exception("进度不匹配，请接收新资料");
+        // A newly started run must verify a previously completed list again. This catches people deleted in the ticket app.
+        if(index==s.people.size()){index=0;pending=false;}
         s.session=new FillSession(index,pending);completed=index;total=s.people.size();s.running=true;s.paused=false;s.hopStage=0;s.resetPerson();s.restrict(pkg);s.showOverlay();s.announce("正在准备 "+(index+1)+" / "+total+" 人");s.schedule(500);return true;
     }
     public static void cancel(String reason){if(active!=null&&active.running)active.finish(reason);}
@@ -101,12 +103,16 @@ public final class FillService extends AccessibilityService {
         final float[] down=new float[4];box.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_DOWN){down[0]=e.getRawX();down[1]=e.getRawY();down[2]=overlayParams.x;down[3]=overlayParams.y;return true;}if(e.getAction()==MotionEvent.ACTION_MOVE){overlayParams.x=(int)(down[2]+e.getRawX()-down[0]);overlayParams.y=(int)(down[3]+e.getRawY()-down[1]);try{windowManager.updateViewLayout(overlay,overlayParams);}catch(Exception ignored){}return true;}if(e.getAction()==MotionEvent.ACTION_UP){pos.edit().putInt("x",overlayParams.x).putInt("y",overlayParams.y).apply();return true;}return false;});
         overlay=box;try{windowManager.addView(overlay,overlayParams);}catch(Exception e){overlay=null;}updateOverlay();
     }
-    private void closeOverlayOnly(){removeOverlay();Toast.makeText(this,"悬浮窗已关闭，自动填写继续运行",Toast.LENGTH_SHORT).show();}
+    private void closeOverlayOnly(){if(!running)return;paused=true;try{checkpoint(session.pending);}catch(Exception ignored){}announce("悬浮窗已关闭，任务已暂停且进度已保留");removeOverlay();Toast.makeText(this,"悬浮窗已关闭，填写任务已暂停",Toast.LENGTH_SHORT).show();}
     private void toggleOverlaySize(){if(overlay==null)return;overlayMinimized=!overlayMinimized;overlayDetails.setVisibility(overlayMinimized?View.GONE:View.VISIBLE);overlayMinimize.setText(overlayMinimized?"□":"－");overlayParams.width=dp(overlayMinimized?76:148);overlayParams.height=dp(overlayMinimized?52:148);try{windowManager.updateViewLayout(overlay,overlayParams);}catch(Exception ignored){}updateOverlay();}
     private void togglePause(){paused=!paused;if(paused)announce("已暂停，当前步骤已保留");else{unknownSince=0;pageSince=0;announce("继续识别当前页面");schedule(100);}}
     private void updateOverlay(){if(overlayTitle!=null)overlayTitle.setText(overlayMinimized?FlowRules.platformName(platform).substring(0,1)+" "+Math.min(total,completed+1)+"/"+total:FlowRules.platformName(platform)+"  "+Math.min(total,completed+1)+" / "+total);if(overlayStatus!=null)overlayStatus.setText(status);if(overlayToggle!=null)overlayToggle.setText(paused?"继续":"暂停");if(overlayProgress!=null){overlayProgress.setMax(Math.max(1,total));overlayProgress.setProgress(Math.min(total,completed+1));}}
     private void removeOverlay(){if(overlay!=null&&windowManager!=null)try{windowManager.removeView(overlay);}catch(Exception ignored){}overlay=null;overlayTitle=null;overlayStatus=null;overlayToggle=null;overlayMinimize=null;overlayProgress=null;overlayDetails=null;overlayMinimized=false;}
-    private void openConfiguredApp(){if(!running)return;if(configuredPkg==null||configuredPkg.isEmpty()){announce("尚未设置要切换的软件，请回接收端设置");return;}if(configuredPkg.equals(target)){announce("设置的软件就是当前填写平台");return;}try{checkpoint(session.pending);restrict(target,configuredPkg);if(!launch(configuredPkg)){restrict(target);announce("无法打开设置的软件，请重新选择");return;}announce("已打开设置的软件，填写进度已保留；返回"+FlowRules.platformName(platform)+"后继续");schedule(700);}catch(Exception e){restrict(target);announce("切换应用失败，填写任务仍保留");}}
+    private void openConfiguredApp(){
+        if(!running)return;if(configuredPkg==null||configuredPkg.isEmpty()){announce("尚未设置要切换的软件，请回接收端设置");return;}if(configuredPkg.equals(target)){announce("设置的软件就是当前填写平台");return;}
+        AccessibilityNodeInfo root=getRootInActiveWindow();String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();String destination=activePkg.equals(target)?configuredPkg:target;String destinationName=destination.equals(target)?FlowRules.platformName(platform):"设置的软件";
+        try{checkpoint(session.pending);restrict(target,configuredPkg);if(!launch(destination)){announce("无法打开"+destinationName+"，填写进度仍保留");return;}announce("正在切换到"+destinationName+"，填写进度已保留");schedule(700);}catch(Exception e){announce("切换应用失败，填写任务仍保留");}
+    }
     private boolean savedRow(List<AccessibilityNodeInfo> nodes,String name,String id){
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&FillSession.maskedIdMatches(text(n),id)){
             AccessibilityNodeInfo parent=n.getParent();for(int level=0;level<2&&parent!=null;level++,parent=parent.getParent()){
@@ -130,14 +136,18 @@ public final class FillService extends AccessibilityService {
         if(activePkg.equals(getPackageName())){paused=true;announce("已回到接收端，任务已暂停；点继续或平台按钮恢复");schedule(700);return;}
         if(root==null||!target.equals(activePkg)){announce("等待回到"+app+"，不会操作其他应用");schedule(700);return;}
         if(now>deadline){deadline=now+180000;launch(target);announce("等待超时，正在重新打开"+app+"一次");acted(3500);return;}
-        List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> visible=words(nodes);FlowRules.Step page=FlowRules.detect(platform,visible);FlowRules.Step prior=last;if(!stable(page,now)){schedule(180);return;}last=page;
+        List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> visible=words(nodes);
+        if(platform==FlowRules.Platform.PIAOXINGQIU&&session.pending&&FlowRules.planetConsentDialog(visible)){
+            AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球授权弹窗 · "+(session.index+1)+" / "+total);
+            if(agree==null||!clickOrTap(agree)){announce("等待票星球授权弹窗的“同意”按钮");schedule(450);return;}acted(650);return;
+        }
+        FlowRules.Step page=FlowRules.detect(platform,visible);if(!stable(page,now)){schedule(180);return;}last=page;
         String[] person=people.get(session.index);String name=person[0],id=person[1];
         String feedback=signal+" "+String.join(" ",visible);signal="";
         if(FillSession.permanentError(feedback)){finish(app+"提示资料、验证或频率问题，请处理后继续；已保留进度");return;}
         if(session.pending&&(feedback.contains("添加成功")||feedback.contains("保存成功")||feedback.contains("提交成功")))session.successSignal=true;
         if(page==FlowRules.Step.LIST){
-            boolean returnedAfterSave=session.pending&&!verificationBack&&prior==FlowRules.Step.FORM;
-            if(savedRow(nodes,name,id)||session.pending&&session.successSignal||returnedAfterSave){try{session.saved();checkpoint(false);completed=session.index;resetPerson();announce("已确认保存 "+completed+" / "+total+" 人");schedule(160);}catch(Exception e){finish("进度保存失败，请核对已保存人员");}return;}
+            if(savedRow(nodes,name,id)){try{session.saved();checkpoint(false);completed=session.index;resetPerson();announce("列表已核对，确认存在 "+completed+" / "+total+" 人");schedule(160);}catch(Exception e){finish("进度保存失败，请核对已保存人员");}return;}
             if(listScanPhase==0){announce("核对人员是否已存在 · "+(session.index+1)+" / "+total);if(listScanMoves++<60&&scroll(nodes,false)){acted(260);return;}listScanPhase=1;listScanMoves=0;acted(180);return;}
             if(listScanPhase==1){if(listScanMoves++<60&&scroll(nodes,true)){acted(260);return;}listScanPhase=2;listScanMoves=0;if(session.pending){session.failedExplicitly();session.attempts=0;verificationBack=false;agreementClicked=false;try{checkpoint(false);}catch(Exception e){finish("进度保存失败");return;}announce("完整列表未找到当前人员，正在重新填写");acted(500);return;}}
             if(session.pending){announce("等待核对保存结果");schedule(500);return;}

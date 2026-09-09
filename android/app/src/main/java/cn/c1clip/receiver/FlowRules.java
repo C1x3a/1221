@@ -25,6 +25,7 @@ public final class FlowRules {
     public static String profileLabel(Platform p){return p==Platform.PIAOXINGQIU?"观演/赛人":"观演人信息";}
     public static String addLabel(Platform p){return p==Platform.PIAOXINGQIU?"新增观演/赛人":"添加/修改观演人信息";}
     public static String confirmLabel(Platform p){return p==Platform.PIAOXINGQIU?"保存":"确定";}
+    public static boolean planetConsentDialog(Set<String> text){return has(text,"已阅读并同意")&&has(text,"敏感个人信息授权书")&&has(text,"同意")&&has(text,"不同意");}
     public static FormStage formStage(boolean nameReady,boolean idReady,boolean agreed,boolean submitted){if(submitted)return FormStage.SAVING;if(!nameReady)return FormStage.NAME;if(!idReady)return FormStage.ID;if(!agreed)return FormStage.AGREEMENT;return FormStage.CONFIRM;}
     public static String stageName(FormStage s){return switch(s){case NAME->"填写姓名";case ID->"填写身份证";case AGREEMENT->"勾选实名协议";case CONFIRM->"确认保存";case SAVING->"等待保存结果";};}
 }
