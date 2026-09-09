@@ -17,6 +17,7 @@ public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private LinearLayout body,contents;private TextView network,fillStatus,copyStatus;private EditText pairInput;private Spinner persons;
     private JSONObject batch;private List<String[]> people=new ArrayList<>();private String shown="";private boolean copying=false,resumed=false;private int copied=0;private String copyId="";
+    private final Runnable copyStep=this::copyNext;
     private int blue=Color.rgb(21,93,251);
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().setStatusBarColor(Color.WHITE);getWindow().setNavigationBarColor(Color.WHITE);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(24,24,24,48);scroll.addView(body);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(244,247,253));setContentView(scroll);
@@ -30,6 +31,7 @@ public final class MainActivity extends Activity {
         button("允许持续后台联网",()->{Intent i=new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()));safeStart(i);});
         button("打开本应用系统设置",()->safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
         heading("最新接收内容",20);contents=new LinearLayout(this);contents.setOrientation(LinearLayout.VERTICAL);body.addView(contents);copyStatus=text("姓名和身份证各占一条，默认间隔 1.5 秒");
+        Spinner interval=new Spinner(this);interval.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"复制间隔 0.8 秒","复制间隔 1.5 秒（默认）","复制间隔 2.5 秒"}));interval.setSelection(getPreferences(0).getInt("intervalChoice",1));interval.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> parent,View view,int position,long itemId){getPreferences(0).edit().putInt("intervalChoice",position).apply();}public void onNothingSelected(AdapterView<?> parent){}});body.addView(interval);
         EditText keyboard=new EditText(this);keyboard.setHint("点这里唤起输入法，再点击逐条复制");body.addView(keyboard);
         button("一键逐条复制",this::copyAll);button("停止复制",()->stopCopy("已停止复制"));
         button("输入法历史中已全部出现",()->{try{if(batch==null)return;JSONObject receipt=Vault.read(this).optJSONObject("receipt");if(receipt==null||receipt.optInt("copied")!=batch.getJSONArray("items").length()){toast("请先完成全部复制并检查输入法历史");return;}Vault.receipt(this,batch.getString("id"),"confirmed",receipt.getInt("copied"),"");sendReceipt();toast("确认已发送给电脑");}catch(Exception e){toast("确认保存失败");}});
@@ -62,13 +64,13 @@ public final class MainActivity extends Activity {
         List<String> labels=new ArrayList<>();for(int i=0;i<people.size();i++)labels.add("第 "+(i+1)+" 人 · "+people.get(i)[0]);if(labels.isEmpty())labels.add("暂无可填写的姓名＋身份证组合");persons.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,labels));
     }catch(Exception e){network.setText("读取本机数据失败，请重新打开应用；不要清除数据以免丢失配对");}}
     private void sendReceipt(){try{if(!ReceiverService.status.equals("未启动接收")&&!ReceiverService.status.equals("接收已停止"))startService(new Intent(this,ReceiverService.class).setAction("RECEIPT"));}catch(Exception ignored){}}
-    private void copyAll(){if(batch==null||copying)return;try{copying=true;copied=0;copyId=batch.getString("id");getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);copyNext();}catch(Exception e){stopCopy("复制失败");}}
+    private void copyAll(){if(batch==null||copying)return;try{handler.removeCallbacks(copyStep);copying=true;copied=0;copyId=batch.getString("id");getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);copyNext();}catch(Exception e){stopCopy("复制失败");}}
     private void copyNext(){if(!copying)return;try{
         JSONObject latest=Vault.latest(this);if(!resumed||!hasWindowFocus()||latest==null||!copyId.equals(latest.optString("id"))){stopCopy("页面或内容已改变，请重新开始");return;}
         JSONArray items=latest.getJSONArray("items");getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("独立信息",items.getString(copied)));copied++;copyStatus.setText("已复制 "+copied+" / "+items.length()+" 条，请检查输入法历史");
-        boolean done=copied==items.length();Vault.receipt(this,copyId,done?"copied":"copying",copied,"");sendReceipt();if(done){copying=false;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}else handler.postDelayed(this::copyNext,1500);
+        boolean done=copied==items.length();Vault.receipt(this,copyId,done?"copied":"copying",copied,"");sendReceipt();if(done){copying=false;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);}else handler.postDelayed(copyStep,new int[]{800,1500,2500}[getPreferences(0).getInt("intervalChoice",1)]);
     }catch(Exception e){stopCopy("复制失败，请回到前台重试");}}
-    private void stopCopy(String reason){if(!copying)return;copying=false;getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);copyStatus.setText(reason);try{Vault.receipt(this,copyId,"error",copied,reason);sendReceipt();}catch(Exception ignored){}}
+    private void stopCopy(String reason){if(!copying)return;copying=false;handler.removeCallbacks(copyStep);getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);copyStatus.setText(reason);try{Vault.receipt(this,copyId,"error",copied,reason);sendReceipt();}catch(Exception ignored){}}
     private void target(String label,boolean fill){
         if(fill){if(people.isEmpty()){toast("请先接收并核对姓名和身份证");return;}if(!FillService.available()){toast("请先点击‘启用辅助填写权限’");return;}}
         String pkg=getPreferences(0).getString("app_"+label,"");if(pkg.isEmpty()){chooseApp(label,fill);return;}launch(label,pkg,fill);

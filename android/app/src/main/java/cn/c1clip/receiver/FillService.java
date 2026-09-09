@@ -56,9 +56,9 @@ public final class FillService extends AccessibilityService {
     private void waitUnknown(String reason){long now=SystemClock.elapsedRealtime();if(unknownSince==0)unknownSince=now;if(now-unknownSince>=10000){finish(reason);return;}handler.postDelayed(step,700);}
     private void fill(List<AccessibilityNodeInfo> nodes){
         List<AccessibilityNodeInfo> fields=new ArrayList<>();for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&n.isEnabled()&&n.isEditable())fields.add(n);
-        AccessibilityNodeInfo nf=null,df=null;
-        for(AccessibilityNodeInfo f:fields){String hint=FlowRules.norm(String.valueOf(f.getHintText())),text=FlowRules.norm(String.valueOf(f.getText()));if(hint.equals("请输入姓名")||text.equals("请输入姓名")||text.equals(name))nf=f;if(hint.equals("请输入证件号")||text.equals("请输入证件号")||text.equals(id))df=f;}
-        if(nf==null||df==null){finish("未能唯一识别姓名与证件号输入框，请手动填写并反馈页面截图");return;}
+        AccessibilityNodeInfo nf=null,df=null;int nc=0,dc=0;
+        for(AccessibilityNodeInfo f:fields){String hint=FlowRules.norm(String.valueOf(f.getHintText())),text=FlowRules.norm(String.valueOf(f.getText()));if(hint.equals("请输入姓名")||text.equals("请输入姓名")||text.equals(name)){nf=f;nc++;}if(hint.equals("请输入证件号")||text.equals("请输入证件号")||text.equals(id)){df=f;dc++;}}
+        if(nf==null||df==null||nc!=1||dc!=1){finish("未能唯一识别姓名与证件号输入框，请手动填写并反馈页面截图");return;}
         if(nf.equals(df)){finish("输入框识别冲突，已停止");return;}
         if(verify){if(name.contentEquals(nf.getText()==null?"":nf.getText())&&id.contentEquals(df.getText()==null?"":df.getText()))finish("已填好，请核对姓名和证件号；协议与确定由你操作");else finish("未能确认填写结果，请手动核对");return;}
         // Do not overwrite an existing person's values without the user clearing the form.
