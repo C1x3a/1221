@@ -9,12 +9,12 @@ public final class FlowRules {
     private static boolean has(Set<String> values,String part){for(String v:values)if(v.contains(part))return true;return false;}
     public static Step detect(Platform platform,Set<String> text){
         if(platform==Platform.PIAOXINGQIU){
-            if(has(text,"姓名")&&has(text,"证件")||has(text,"请阅读并同意")&&has(text,"保存"))return Step.FORM;
+            if(has(text,"姓名")&&has(text,"证件")&&(has(text,"新增观演/赛人")||has(text,"证件类型")||has(text,"保存"))||has(text,"请阅读并同意")&&has(text,"保存"))return Step.FORM;
             if(has(text,"新增观演/赛人"))return Step.LIST;
             if(has(text,"观演/赛人"))return Step.PROFILE;
             if(has(text,"我的"))return Step.HOME;
         }else{
-            if(has(text,"姓名")&&(has(text,"证件")||has(text,"身份证"))||has(text,"我已阅读并同意")&&has(text,"确定"))return Step.FORM;
+            if(has(text,"姓名")&&(has(text,"证件")||has(text,"身份证"))&&(has(text,"添加观演人信息")||has(text,"证件类型")||has(text,"确定"))||has(text,"我已阅读并同意")&&has(text,"确定"))return Step.FORM;
             if(has(text,"添加/修改观演人信息"))return Step.LIST;
             if(has(text,"观演人信息"))return Step.PROFILE;
             if(has(text,"我的"))return Step.HOME;
