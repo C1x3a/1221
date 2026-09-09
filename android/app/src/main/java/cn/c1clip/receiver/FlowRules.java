@@ -1,6 +1,6 @@
 package cn.c1clip.receiver;
 import java.util.Set;
-/** Only the four supplied Maoyan pages. No purchase, delete, agreement or submit action. */
+/** Only the four supplied Maoyan pages. Only identity form submission; no purchase or delete action. */
 public final class FlowRules {
     public enum Step { HOME, PROFILE, LIST, FORM, UNKNOWN }
     public static String norm(String s){return s==null?"":s.replaceAll("\\s+","").replace("＋","+");}

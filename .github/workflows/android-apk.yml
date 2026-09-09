@@ -23,8 +23,53 @@ jobs:
       - name: Test and build
         working-directory: android
         run: gradle testDebugUnitTest assembleDebug --no-daemon
+      - name: Package APK and signing utility
+        run: |
+          mkdir -p bundle
+          cp android/app/build/outputs/apk/debug/app-debug.apk bundle/
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" bundle/
       - uses: actions/upload-artifact@v4
         with:
           name: c1clip-android-test
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: bundle/
           retention-days: 30
+
+  ui-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: c1clip-android-test
+          path: bundle
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            adb install bundle/app-debug.apk
+            adb logcat -c
+            adb shell am start -W -n cn.c1clip.receiver.upgrade/cn.c1clip.receiver.MainActivity
+            sleep 3
+            adb shell pidof cn.c1clip.receiver.upgrade
+            adb shell uiautomator dump /sdcard/ui.xml
+            adb pull /sdcard/ui.xml bundle/ui.xml
+            adb exec-out screencap -p > bundle/home.png
+            adb logcat -d -s AndroidRuntime:E > bundle/crash.log
+            python3 -c "from pathlib import Path; assert 'FATAL EXCEPTION' not in Path('bundle/crash.log').read_text()"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-ui-smoke
+          path: |
+            bundle/home.png
+            bundle/ui.xml
+            bundle/crash.log
