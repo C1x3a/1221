@@ -32,7 +32,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().setStatusBarColor(Color.WHITE);getWindow().setNavigationBarColor(Color.WHITE);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(16),dp(12),dp(16),dp(24));scroll.addView(body);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(245,248,253));setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{body.setPadding(dp(16),dp(12)+insets.getSystemWindowInsetTop(),dp(16),dp(24)+insets.getSystemWindowInsetBottom());return insets;});
-        label(body,"多机接收",28,ink,true);label(body,"0.3  ·  接收、整理、填写",13,muted,false);
+        label(body,"多机接收",28,ink,true);label(body,"0.4  ·  接收、整理、连续填写",13,muted,false);
         section("设备连接","");network=label(card,ReceiverService.status,14,muted,false);
         action(card,"连接与权限设置",false,this::showSettings);
         section("1 · 接收信息","电脑发送后自动更新；姓名与证件号分别保留。");count=label(card,"等待资料",14,blue,true);contents=new LinearLayout(this);contents.setOrientation(LinearLayout.VERTICAL);card.addView(contents);
@@ -47,7 +47,7 @@ public final class MainActivity extends Activity {
         stopTask=action(card,"暂停填写",false,()->FillService.cancel("已暂停，进度已保留"));stopTask.setVisibility(View.GONE);
         LinearLayout after=fold(card,"完成后切换应用");Switch hop=new Switch(this);hop.setText("开启完成后切换");hop.setTextColor(ink);hop.setTextSize(15);hop.setChecked(getPreferences(0).getBoolean("afterEnabled",false));hop.setOnCheckedChangeListener((b,checked)->getPreferences(0).edit().putBoolean("afterEnabled",checked).apply());after.addView(hop);
         afterLabel=label(after,"当前："+getPreferences(0).getString("afterName","未选择应用"),14,muted,false);action(after,"选择切换应用",false,()->chooseInstalled("选择完成后打开的应用","",(pkg,name)->{getPreferences(0).edit().putString("afterPkg",pkg).putString("afterName",name).apply();afterLabel.setText("当前："+name);}));
-        Spinner stay=new Spinner(this);stay.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"停留 1 秒后返回","停留 2 秒后返回","停留 3 秒后返回","停留 5 秒后返回"}));stay.setSelection(getPreferences(0).getInt("stay",1));stay.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onItemSelected(AdapterView<?> p,View v,int pos,long i){getPreferences(0).edit().putInt("stay",pos).apply();}public void onNothingSelected(AdapterView<?> p){}});after.addView(stay);
+        label(after,"所选应用停留 10 秒后，自动返回原填写平台。",14,muted,false);
         label(body,"息屏可接收 · 填写时请保持手机解锁",12,muted,false);refresh();
         try{if(Vault.read(this).optJSONObject("pair")!=null)startReceive();}catch(Exception ignored){}
     }
@@ -57,11 +57,11 @@ public final class MainActivity extends Activity {
         EditText input=new EditText(this);input.setHint("粘贴配对链接");input.setMinLines(2);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);input.setAutofillHints((String[])null);panel.addView(input);
         action(panel,"保存配对并接收",true,()->{try{JSONObject pair=Protocol.pair(input.getText().toString());FillService.cancel("配对已更新");stopCopy("配对已更新");stopService(new Intent(this,ReceiverService.class));Vault.savePair(this,pair);input.setText("");shown="";handler.postDelayed(this::startReceive,500);refresh();toast("已保存："+pair.getString("name"));}catch(Exception e){toast("配对失败，请检查链接");}});
         action(panel,"开始后台接收",false,this::startReceive);action(panel,"停止后台接收",false,()->{FillService.cancel("已停止");stopService(new Intent(this,ReceiverService.class));});
-        action(panel,"开启辅助填写权限",false,()->new AlertDialog.Builder(this).setTitle("辅助填写权限").setMessage("点击猫眼或票星球后，服务会读取所选应用控件，填写全部人员、勾选协议并逐人确认保存；如启用后续切换，还会打开你选择的应用并返回填写平台。资料、验证码或未知结果问题会暂停，不上传页面内容。请先阅读对应平台的实名与授权说明后使用。").setPositiveButton("前往设置",(d,w)->safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("取消",null).show());
+        action(panel,"开启辅助填写权限",false,()->new AlertDialog.Builder(this).setTitle("辅助填写权限").setMessage("点击猫眼或票星球后，服务会识别当前页面，从首页、我的、人员列表或填写页继续，填写全部人员、勾选协议并逐人保存。未知中间页会自动返回重新识别；如遇验证码、登录失效或资料校验错误，需要你先处理。页面内容不会上传。").setPositiveButton("前往设置",(d,w)->safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("取消",null).show());
         action(panel,"允许后台持续联网",false,()->safeStart(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()))));action(panel,"打开应用系统设置",false,()->safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
         action(panel,"重新选择猫眼 / 票星球",false,()->{getPreferences(0).edit().remove("app_猫眼").remove("app_票星球").apply();toast("下次点击时重新选择");});
         action(panel,"处理上次结果不明的提交",false,()->new AlertDialog.Builder(this).setTitle("先核对平台人员列表").setMessage("只有确认当前人员尚未保存时，才解除等待状态。已经保存的人员请直接在列表页面重试，程序会先检查列表。").setPositiveButton("已核对未保存，允许重试",(d,w)->{FillService.cancel("准备重试");try{synchronized(Vault.class){JSONObject state=Vault.read(this),progress=state.optJSONObject("fillProgress");if(progress!=null){progress.put("pending",false);Vault.write(this,state);}}toast("已解除等待，可点击对应平台继续");}catch(Exception e){toast("更新失败");}}).setNegativeButton("取消",null).show());
-        label(panel,"明确失败时最多尝试 6 次，未确认结果时暂停。后台省电设置因小米系统版本而异。",12,muted,false);
+        label(panel,"自动填写会持续识别并恢复；回到本 APP 再点击平台即可重新启动。后台省电设置因小米系统版本而异。",12,muted,false);
         new AlertDialog.Builder(this).setTitle("连接与权限").setView(scroll).setPositiveButton("完成",null).show();
     }
     private void startReceive(){try{if(Vault.read(this).optJSONObject("pair")==null){toast("请先粘贴电脑配对链接");return;}if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);startForegroundService(new Intent(this,ReceiverService.class));toast("后台接收已启动");}catch(Exception e){toast("启动失败，请重新配对或检查系统设置");}}
@@ -105,7 +105,7 @@ public final class MainActivity extends Activity {
     private void launch(String label,String pkg,boolean fill){try{
         Intent intent=getPackageManager().getLaunchIntentForPackage(pkg);if(intent==null){getPreferences(0).edit().remove("app_"+label).apply();toast("应用未安装，请重新选择");return;}
         if(getSystemService(KeyguardManager.class).isKeyguardLocked()){toast("请先解锁手机");return;}
-        if(fill){JSONObject latest=Vault.latest(this);if(latest==null||batch==null||!latest.getString("id").equals(batch.getString("id"))){refresh();toast("资料已更新，请重新选择人员");return;}String after=getPreferences(0).getBoolean("afterEnabled",false)?getPreferences(0).getString("afterPkg",""):"";if(getPreferences(0).getBoolean("afterEnabled",false)&&after.isEmpty()){toast("请先选择完成后切换的应用，或关闭该功能");return;}if(FillService.isRunning()){toast("任务正在进行，可先暂停");return;}FlowRules.Platform platform=label.equals("票星球")?FlowRules.Platform.PIAOXINGQIU:FlowRules.Platform.MAOYAN;if(!FillService.start(pkg,platform,people,batch.getString("id"),after,new int[]{1000,2000,3000,5000}[getPreferences(0).getInt("stay",1)])){toast("辅助服务未启用");return;}}
+        if(fill){JSONObject latest=Vault.latest(this);if(latest==null||batch==null||!latest.getString("id").equals(batch.getString("id"))){refresh();toast("资料已更新，请重新选择人员");return;}String after=getPreferences(0).getBoolean("afterEnabled",false)?getPreferences(0).getString("afterPkg",""):"";if(getPreferences(0).getBoolean("afterEnabled",false)&&after.isEmpty()){toast("请先选择完成后切换的应用，或关闭该功能");return;}if(FillService.isRunning())FillService.cancel("正在重新启动填写");FlowRules.Platform platform=label.equals("票星球")?FlowRules.Platform.PIAOXINGQIU:FlowRules.Platform.MAOYAN;if(!FillService.start(pkg,platform,people,batch.getString("id"),after,10000)){toast("辅助服务未启用");return;}}
         startActivity(intent);
     }catch(Exception e){FillService.cancel("启动失败，已停止");toast("无法打开目标应用，请重新选择");}}
 }

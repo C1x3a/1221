@@ -6,7 +6,7 @@ public final class FillSession {
     public boolean pending=false,retryable=false,successSignal=false;
     public long sentAt=0;
     public FillSession(int index,boolean pending){this.index=index;this.pending=pending;}
-    public boolean maySubmit(long now){return !pending&&attempts<MAX_ATTEMPTS&&(!retryable||now-sentAt>=1200);}
+    public boolean maySubmit(long now){return !pending&&(!retryable||now-sentAt>=1200);}
     public void submitted(long now){pending=true;retryable=false;successSignal=false;attempts++;sentAt=now;}
     public void failedExplicitly(){if(pending){pending=false;retryable=true;}}
     public void saved(){index++;attempts=0;pending=false;retryable=false;successSignal=false;sentAt=0;}
