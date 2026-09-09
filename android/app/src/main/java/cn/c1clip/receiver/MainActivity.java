@@ -32,7 +32,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().setStatusBarColor(Color.WHITE);getWindow().setNavigationBarColor(Color.WHITE);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(16),dp(12),dp(16),dp(24));scroll.addView(body);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(245,248,253));setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{body.setPadding(dp(16),dp(12)+insets.getSystemWindowInsetTop(),dp(16),dp(24)+insets.getSystemWindowInsetBottom());return insets;});
-        label(body,"多机接收",28,ink,true);label(body,"0.5  ·  接收、整理、稳定填写",13,muted,false);
+        label(body,"多机接收",28,ink,true);label(body,"0.5.1  ·  接收、整理、稳定填写",13,muted,false);
         section("设备连接","");network=label(card,ReceiverService.status,14,muted,false);
         action(card,"连接与权限设置",false,this::showSettings);
         section("1 · 接收信息","电脑发送后自动更新；姓名与证件号分别保留。");count=label(card,"等待资料",14,blue,true);contents=new LinearLayout(this);contents.setOrientation(LinearLayout.VERTICAL);card.addView(contents);
