@@ -8,10 +8,6 @@
 
   try{ remain=quotaText; }catch{}
 
-  function findQuotaSection(){
-    return [...document.querySelectorAll('section.card')].find(s=>s.querySelector('h2')?.textContent?.includes('读取真实额度'));
-  }
-
   function apply(){
     try{
       document.querySelectorAll('.metric > span').forEach(el=>{
@@ -20,8 +16,9 @@
       });
 
       const u=state?.usage||{};
-      const section=findQuotaSection();
+      const section=[...document.querySelectorAll('section.card')].find(s=>s.querySelector('h2')?.textContent?.includes('读取真实额度'));
       if(!section) return;
+
       const fields=[...section.querySelectorAll('.field')];
       const five=fields.find(f=>f.querySelector('label')?.textContent?.trim()==='5 小时');
       const week=fields.find(f=>f.querySelector('label')?.textContent?.trim()==='每周');
@@ -43,7 +40,8 @@
       }
       const fr=u.fiveHour?.rawCardText||'';
       const wr=u.weekly?.rawCardText||'';
-      raw.innerHTML=`<b>ChatGPT 页面原文</b><br>5 小时：${esc(fr||'未识别到对应卡片')}<br><br>每周：${esc(wr||'未识别到对应卡片')}`;
+      const next=`<b>ChatGPT 页面原文</b><br>5 小时：${esc(fr||'未识别到对应卡片')}<br><br>每周：${esc(wr||'未识别到对应卡片')}`;
+      if(raw.innerHTML!==next) raw.innerHTML=next;
     }catch{}
   }
 
@@ -52,7 +50,5 @@
     render=function(){ originalRender(); setTimeout(apply,0); };
   }catch{}
 
-  const observer=new MutationObserver(()=>apply());
-  observer.observe(document.documentElement,{subtree:true,childList:true});
   setTimeout(apply,300);
 })();
