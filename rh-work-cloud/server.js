@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readState, updateState, publicState, addLog } from './lib/store.js';
-import { startLoginSession, finishLoginSession, sessionScreenshot, sessionControl, testWork, executeWork, diagnose, readUsage } from './lib/executor.js';
+import { startLoginSession, finishLoginSession, sessionScreenshot, sessionControl, testWork, executeWork, diagnose } from './lib/executor.js';
+import { readUsageStrict } from './lib/usage.js';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const app=express();
@@ -18,7 +19,7 @@ function guard(req,res,next){if(!authed(req))return res.status(401).json({error:
 function setCookie(res){const token=`ok.${sign('ok')}`;res.setHeader('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*86400}; ${process.env.NODE_ENV==='production'?'Secure;':''}`);}
 function fail(res,e,route){const msg=e?.message||String(e);console.error(`[${route}]`,msg,e?.stack||'');return res.status(400).json({error:msg,code:e?.code||null});}
 
-app.get('/health',(req,res)=>res.json({ok:true,time:new Date().toISOString(),version:2}));
+app.get('/health',(req,res)=>res.json({ok:true,time:new Date().toISOString(),version:'2.1'}));
 app.post('/api/login',(req,res)=>{const s=readState(); if(String(req.body?.password||'')!==String(s.settings.adminPassword))return res.status(401).json({error:'密码错误'});setCookie(res);res.json({ok:true});});
 app.post('/api/logout',(req,res)=>{res.setHeader('Set-Cookie',`${COOKIE}=; Path=/; Max-Age=0`);res.json({ok:true});});
 app.get('/api/state',guard,(req,res)=>res.json(publicState()));
@@ -33,7 +34,7 @@ app.post('/api/settings',guard,(req,res)=>{
 });
 
 app.get('/api/diagnostics',guard,async(req,res)=>{try{res.json(await diagnose())}catch(e){fail(res,e,'diagnostics')}});
-app.post('/api/usage/check',guard,async(req,res)=>{try{res.json(await readUsage())}catch(e){fail(res,e,'usage/check')}});
+app.post('/api/usage/check',guard,async(req,res)=>{try{res.json(await readUsageStrict())}catch(e){fail(res,e,'usage/check')}});
 app.post('/api/browser/start',guard,async(req,res)=>{try{res.json(await startLoginSession())}catch(e){fail(res,e,'browser/start')}});
 app.post('/api/browser/finish',guard,async(req,res)=>{try{res.json(await finishLoginSession())}catch(e){fail(res,e,'browser/finish')}});
 app.get('/api/browser/screenshot',guard,async(req,res)=>{try{res.json(await sessionScreenshot())}catch(e){fail(res,e,'browser/screenshot')}});
@@ -69,4 +70,4 @@ setInterval(tick,15000);
 app.use(express.static(path.join(__dirname,'public')));
 app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 const port=Number(process.env.PORT||3000);
-app.listen(port,'0.0.0.0',()=>console.log(`RH Work Cloud v2 listening on ${port}`));
+app.listen(port,'0.0.0.0',()=>console.log(`RH Work Cloud v2.1 listening on ${port}`));
