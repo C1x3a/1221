@@ -5,54 +5,93 @@ import { fileURLToPath } from 'node:url';
 import { readState, updateState, publicState, addLog } from './lib/store.js';
 import { startLoginSession, finishLoginSession, sessionScreenshot, sessionControl, testWork, executeWork, diagnose } from './lib/executor.js';
 import { readUsageStrict } from './lib/usage.js';
+import { ensureAgentToken, pairAgent, verifyAgentToken, agentOnline, heartbeat, queueAgentCommand, pollAgent, reportUsage, finishAgentCommand, localAgentSnapshot } from './lib/local-agent.js';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const app=express();
 app.use(express.json({limit:'2mb'}));
 
 const COOKIE='rh_auth';
-const secret=process.env.AUTH_SECRET || 'rh-work-cloud-v2-change-this-secret';
+const secret=process.env.AUTH_SECRET || 'rh-work-cloud-v3-change-this-secret';
 function sign(v){return crypto.createHmac('sha256',secret).update(v).digest('hex');}
 function parseCookies(req){return Object.fromEntries(String(req.headers.cookie||'').split(';').map(x=>x.trim()).filter(Boolean).map(x=>{const i=x.indexOf('=');return [decodeURIComponent(x.slice(0,i)),decodeURIComponent(x.slice(i+1))]}));}
 function authed(req){const c=parseCookies(req)[COOKIE]; if(!c)return false; const [v,s]=c.split('.'); return v==='ok' && s===sign(v);}
 function guard(req,res,next){if(!authed(req))return res.status(401).json({error:'UNAUTHORIZED'});next();}
+function agentGuard(req,res,next){const token=req.get('x-rh-agent-token')||req.body?.token||'';if(!verifyAgentToken(token))return res.status(401).json({error:'AGENT_UNAUTHORIZED'});next();}
 function setCookie(res){const token=`ok.${sign('ok')}`;res.setHeader('Set-Cookie',`${COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30*86400}; ${process.env.NODE_ENV==='production'?'Secure;':''}`);}
 function fail(res,e,route){const msg=e?.message||String(e);console.error(`[${route}]`,msg,e?.stack||'');return res.status(400).json({error:msg,code:e?.code||null});}
 
-app.get('/health',(req,res)=>res.json({ok:true,time:new Date().toISOString(),version:'2.1'}));
+ensureAgentToken();
+
+async function preferredUsageCheck(reason='manual'){
+  const s=readState();
+  if(agentOnline(s)){
+    const cmd=queueAgentCommand('CHECK_USAGE',{},reason);
+    return {queued:true,mode:'local-office-pc',commandId:cmd.id,message:'已让公司电脑读取真实 ChatGPT 限额'};
+  }
+  return readUsageStrict();
+}
+
+async function preferredExecute(reason='manual'){
+  const s=readState();
+  if(agentOnline(s)){
+    if(!s.settings.workUrl || /\/share\//i.test(s.settings.workUrl)) throw new Error('请先保存真实可交互的 ChatGPT Work/对话地址');
+    if(!String(s.settings.continuePrompt||'').trim()) throw new Error('续跑文案不能为空');
+    const cmd=queueAgentCommand('SEND_WORK',{url:s.settings.workUrl,prompt:s.settings.continuePrompt,workName:s.settings.workName},reason);
+    updateState({runtime:{status:'running',lastRunAt:new Date().toISOString(),lastError:null}});
+    return {queued:true,submitted:false,mode:'local-office-pc',commandId:cmd.id};
+  }
+  return executeWork(reason);
+}
+
+app.get('/health',(req,res)=>res.json({ok:true,time:new Date().toISOString(),version:'3.0-local-monitor'}));
 app.post('/api/login',(req,res)=>{const s=readState(); if(String(req.body?.password||'')!==String(s.settings.adminPassword))return res.status(401).json({error:'密码错误'});setCookie(res);res.json({ok:true});});
 app.post('/api/logout',(req,res)=>{res.setHeader('Set-Cookie',`${COOKIE}=; Path=/; Max-Age=0`);res.json({ok:true});});
 app.get('/api/state',guard,(req,res)=>res.json(publicState()));
 app.post('/api/settings',guard,(req,res)=>{
   const b=req.body||{}; const s=readState();
   const settings={...s.settings};
-  for(const k of ['workName','workUrl','continuePrompt','autoContinue','autoRetry','fallbackWindowMinutes']) if(k in b) settings[k]=b[k];
+  for(const k of ['workName','workUrl','continuePrompt','autoContinue','autoRetry','fallbackWindowMinutes','executionMode']) if(k in b) settings[k]=b[k];
   if(b.schedule) settings.schedule={...settings.schedule,...b.schedule};
   if(typeof b.steelApiKey==='string' && b.steelApiKey && !b.steelApiKey.includes('•')) settings.steelApiKey=b.steelApiKey.trim();
   if(typeof b.adminPassword==='string' && b.adminPassword.length>=6) settings.adminPassword=b.adminPassword;
   updateState({settings}); addLog('settings_saved','配置已保存'); res.json(publicState());
 });
 
-app.get('/api/diagnostics',guard,async(req,res)=>{try{res.json(await diagnose())}catch(e){fail(res,e,'diagnostics')}});
-app.post('/api/usage/check',guard,async(req,res)=>{try{res.json(await readUsageStrict())}catch(e){fail(res,e,'usage/check')}});
+app.get('/api/diagnostics',guard,async(req,res)=>{try{const d=await diagnose();res.json({...d,localAgent:localAgentSnapshot()})}catch(e){fail(res,e,'diagnostics')}});
+app.post('/api/usage/check',guard,async(req,res)=>{try{res.json(await preferredUsageCheck('dashboard'))}catch(e){fail(res,e,'usage/check')}});
 app.post('/api/browser/start',guard,async(req,res)=>{try{res.json(await startLoginSession())}catch(e){fail(res,e,'browser/start')}});
 app.post('/api/browser/finish',guard,async(req,res)=>{try{res.json(await finishLoginSession())}catch(e){fail(res,e,'browser/finish')}});
 app.get('/api/browser/screenshot',guard,async(req,res)=>{try{res.json(await sessionScreenshot())}catch(e){fail(res,e,'browser/screenshot')}});
 app.post('/api/browser/control',guard,async(req,res)=>{try{const a=req.body||{}; const allowed=['click_mouse','type_text','press_key','scroll','wait','take_screenshot']; if(!allowed.includes(a.action))throw new Error('INVALID_ACTION');res.json(await sessionControl(a))}catch(e){fail(res,e,'browser/control')}});
-app.post('/api/work/test',guard,async(req,res)=>{try{res.json(await testWork())}catch(e){fail(res,e,'work/test')}});
-app.post('/api/work/run',guard,async(req,res)=>{try{res.json(await executeWork(req.body?.reason||'manual'))}catch(e){fail(res,e,'work/run')}});
+app.post('/api/work/test',guard,async(req,res)=>{try{const s=readState();if(agentOnline(s)){const cmd=queueAgentCommand('TEST_WORK',{url:s.settings.workUrl},'dashboard');return res.json({queued:true,mode:'local-office-pc',commandId:cmd.id});}res.json(await testWork())}catch(e){fail(res,e,'work/test')}});
+app.post('/api/work/run',guard,async(req,res)=>{try{res.json(await preferredExecute(req.body?.reason||'manual'))}catch(e){fail(res,e,'work/run')}});
+app.get('/api/local-agent/status',guard,(req,res)=>res.json(localAgentSnapshot()));
 app.post('/api/limit/manual',guard,(req,res)=>{const s=readState(); const mins=Math.max(1,Number(req.body?.minutes||s.settings.fallbackWindowMinutes||300)); const detectedAt=new Date().toISOString(); const resetAt=new Date(Date.now()+mins*60000).toISOString();updateState({runtime:{status:'waiting',gptStatus:'limited',limitDetectedAt:detectedAt,resetAt}});addLog('limit_manual',`手动开始恢复倒计时：${mins} 分钟`,'warn');res.json(publicState());});
 app.post('/api/limit/clear',guard,(req,res)=>{updateState({runtime:{status:'idle',gptStatus:'unknown',limitDetectedAt:null,resetAt:null,lastError:null}});addLog('limit_cleared','已清除恢复倒计时');res.json(publicState());});
+
+// 本地公司电脑监控端：首次用控制台密码换取设备令牌，之后仅凭设备令牌出站轮询。
+app.post('/api/local-agent/pair',(req,res)=>{try{res.json(pairAgent(req.body?.password))}catch(e){return res.status(401).json({error:'配对密码错误'})}});
+app.post('/api/local-agent/heartbeat',agentGuard,(req,res)=>{try{res.json(heartbeat(req.body||{}))}catch(e){fail(res,e,'local-agent/heartbeat')}});
+app.post('/api/local-agent/poll',agentGuard,(req,res)=>{try{heartbeat(req.body||{});res.json(pollAgent(req.body?.deviceId||'office-pc'))}catch(e){fail(res,e,'local-agent/poll')}});
+app.post('/api/local-agent/usage',agentGuard,(req,res)=>{try{heartbeat(req.body||{});res.json({ok:true,usage:reportUsage(req.body?.usage||{})})}catch(e){fail(res,e,'local-agent/usage')}});
+app.post('/api/local-agent/report',agentGuard,(req,res)=>{try{heartbeat(req.body||{});res.json(finishAgentCommand(req.body?.commandId,{ok:req.body?.ok!==false,result:req.body?.result||null,error:req.body?.error||null}))}catch(e){fail(res,e,'local-agent/report')}});
 
 let ticking=false;
 async function tick(){
   if(ticking)return; ticking=true;
   try{
-    const s=readState(); const now=new Date();
-    if(s.settings.autoContinue && s.runtime.status==='waiting' && s.runtime.resetAt && new Date(s.runtime.resetAt).getTime()<=Date.now()){
-      addLog('recovery_due','恢复倒计时结束，自动尝试继续');
-      await executeWork('limit-recovery').catch(e=>console.error('[auto-recovery]',e.message));
+    const s=readState(); const now=new Date(); const local=agentOnline(s);
+
+    // 本地监控端会持续上报真实限额；当两项都恢复可用时直接排队续跑。
+    if(local && s.settings.autoContinue && s.runtime.status==='ready_local'){
+      await preferredExecute('quota-recovered').catch(e=>console.error('[local-auto-recovery]',e.message));
+    }else if(local && s.settings.autoContinue && s.runtime.status==='waiting' && s.runtime.resetAt && new Date(s.runtime.resetAt).getTime()<=Date.now()){
+      queueAgentCommand('CHECK_USAGE',{},'quota-reset-check');
+    }else if(!local && s.settings.autoContinue && s.runtime.status==='waiting' && s.runtime.resetAt && new Date(s.runtime.resetAt).getTime()<=Date.now()){
+      await executeWork('limit-recovery').catch(e=>console.error('[steel-auto-recovery]',e.message));
     }
+
     const sc=s.settings.schedule||{};
     if(sc.enabled && sc.time){
       const sh=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(now).reduce((o,p)=>({...o,[p.type]:p.value}),{});
@@ -61,7 +100,7 @@ async function tick(){
       if(sc.kind==='once' && sc.date===date && sc.time===time){due=true;key=`once:${date}:${time}`}
       if(sc.kind==='daily' && sc.time===time){due=true;key=`daily:${date}:${time}`}
       if(sc.kind==='weekdays' && !['Sat','Sun'].includes(weekday) && sc.time===time){due=true;key=`weekdays:${date}:${time}`}
-      if(due && s.runtime.lastScheduleKey!==key){updateState({runtime:{lastScheduleKey:key}});addLog('schedule_due',`定时任务触发 ${key}`);await executeWork('schedule').catch(e=>console.error('[schedule]',e.message));}
+      if(due && s.runtime.lastScheduleKey!==key){updateState({runtime:{lastScheduleKey:key}});addLog('schedule_due',`定时任务触发 ${key}`);await preferredExecute('schedule').catch(e=>console.error('[schedule]',e.message));}
     }
   }finally{ticking=false;}
 }
@@ -70,4 +109,4 @@ setInterval(tick,15000);
 app.use(express.static(path.join(__dirname,'public')));
 app.use((req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 const port=Number(process.env.PORT||3000);
-app.listen(port,'0.0.0.0',()=>console.log(`RH Work Cloud v2.1 listening on ${port}`));
+app.listen(port,'0.0.0.0',()=>console.log(`RH Work Cloud v3 local-monitor listening on ${port}`));
