@@ -6,9 +6,11 @@ const dataDir = process.env.DATA_DIR || path.resolve('data');
 const file = path.join(dataDir, 'state.json');
 
 const defaults = {
-  version: 2,
+  version: 3,
   settings: {
     steelApiKey: '',
+    localAgentToken: '',
+    executionMode: 'local-preferred',
     adminPassword: process.env.ADMIN_PASSWORD || 'chenyuhang',
     workName: 'RH Work',
     workUrl: '',
@@ -32,14 +34,27 @@ const defaults = {
     activeDebugUrl: null,
     nextScheduledAt: null,
     executionLockUntil: null,
-    lastScheduleKey: null
+    lastScheduleKey: null,
+    localAgent: {
+      status: 'offline',
+      deviceId: null,
+      hostname: null,
+      version: null,
+      browser: null,
+      browserReady: false,
+      chatgptLoggedIn: false,
+      workReady: false,
+      lastError: null,
+      lastSeenAt: null
+    },
+    localAgentQueue: []
   },
   usage: {
     status: 'unknown',
     checkedAt: null,
     source: null,
-    fiveHour: { usedPercent: null, remainingPercent: null, resetAt: null, label: null },
-    weekly: { usedPercent: null, remainingPercent: null, resetAt: null, label: null },
+    fiveHour: { usedPercent: null, remainingPercent: null, resetAt: null, label: null, rawCardText: '' },
+    weekly: { usedPercent: null, remainingPercent: null, resetAt: null, label: null, rawCardText: '' },
     rawPreview: '',
     error: null
   },
@@ -91,15 +106,20 @@ export function addLog(event, detail='', level='info', meta={}){
 
 export function publicState(){
   const s = readState();
+  const {localAgentToken, ...safeSettings}=s.settings;
+  const agent=s.runtime?.localAgent||{};
+  const agentOnline=Boolean(agent.lastSeenAt && Date.now()-new Date(agent.lastSeenAt).getTime()<90000);
   return {
-    settings: {...s.settings, steelApiKey: s.settings.steelApiKey ? '••••••••' : ''},
-    runtime: s.runtime,
+    settings: {...safeSettings, steelApiKey: s.settings.steelApiKey ? '••••••••' : ''},
+    runtime: {...s.runtime,localAgent:{...agent,online:agentOnline},localAgentQueue:undefined},
     usage: s.usage,
     logs: s.logs.slice(0, 120),
     steelConnected: Boolean(process.env.STEEL_API_KEY || s.settings.steelApiKey),
+    localAgentOnline: agentOnline,
     setup: {
       steel: Boolean(process.env.STEEL_API_KEY || s.settings.steelApiKey),
       profile: Boolean(s.runtime.steelProfileId),
+      localAgent: agentOnline,
       workUrl: Boolean(s.settings.workUrl),
       interactiveWorkUrl: Boolean(s.settings.workUrl && !/\/share\//i.test(s.settings.workUrl))
     }
