@@ -115,12 +115,18 @@ public final class FillService extends AccessibilityService {
     }
     private boolean savedRow(List<AccessibilityNodeInfo> nodes,String name,String id){
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&FillSession.maskedIdMatches(text(n),id)){
-            AccessibilityNodeInfo parent=n.getParent();for(int level=0;level<2&&parent!=null;level++,parent=parent.getParent()){
-                List<AccessibilityNodeInfo> row=new ArrayList<>();collect(parent,row);for(String value:words(row))if(maskedNameMatches(value,name))return true;
+            AccessibilityNodeInfo parent=n.getParent();for(int level=0;level<5&&parent!=null;level++,parent=parent.getParent()){
+                List<AccessibilityNodeInfo> row=new ArrayList<>();collect(parent,row);for(String value:words(row))if(FillSession.maskedNameMatches(value,name))return true;
+            }
+            // Xiaomi/MIUI WebView variants may expose the name and ID in sibling virtual nodes without a useful
+            // shared parent. In that case require both values to be on the same visual row/card.
+            Rect identityBounds=new Rect();n.getBoundsInScreen(identityBounds);
+            for(AccessibilityNodeInfo candidate:nodes)if(candidate.isVisibleToUser()&&FillSession.maskedNameMatches(text(candidate),name)){
+                Rect nameBounds=new Rect();candidate.getBoundsInScreen(nameBounds);
+                if(!identityBounds.isEmpty()&&!nameBounds.isEmpty()&&Math.abs(nameBounds.centerY()-identityBounds.centerY())<=dp(110))return true;
             }
         }return false;
     }
-    private boolean maskedNameMatches(String shown,String name){String s=FlowRules.norm(shown);if(s.equals(name))return true;String visible=s.replaceAll("^[*•●]+","");return visible.length()>0&&visible.length()<name.length()&&name.endsWith(visible)&&s.matches("[*•●]+.*");}
     private boolean scroll(List<AccessibilityNodeInfo> nodes,boolean forward){for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(forward?AccessibilityNodeInfo.ACTION_SCROLL_FORWARD:AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))return true;return false;}
     private final Runnable step=()->tick();
     private void tick(){

@@ -18,4 +18,12 @@ public final class FillSession {
         if(!s.matches("[0-9]{3,}[*•●]+[0-9Xx]{3,}"))return false;
         String[] parts=s.split("[*•●]+");return parts.length==2&&id.startsWith(parts[0])&&id.toUpperCase().endsWith(parts[1].toUpperCase());
     }
+    public static boolean maskedNameMatches(String displayed,String name){
+        String shown=FlowRules.norm(displayed),wanted=FlowRules.norm(name);
+        if(shown.equals(wanted))return true;
+        if(!shown.matches("[*•●]+.*"))return false;
+        String visible=shown.replaceAll("^[*•●]+","");
+        // Some Maoyan builds prefix a privacy star but still expose the complete name (for example “*张蕊”).
+        return !visible.isEmpty()&&visible.length()<=wanted.length()&&wanted.endsWith(visible);
+    }
 }
