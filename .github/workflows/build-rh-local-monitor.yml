@@ -18,11 +18,12 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install runtime dependencies
+      - name: Install runtime dependencies and validate
         shell: pwsh
         run: |
           Set-Location rh-work-cloud/local-agent
           npm install --omit=dev
+          node --check agent.js
 
       - name: Assemble portable package
         shell: pwsh
