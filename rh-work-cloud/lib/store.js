@@ -6,7 +6,7 @@ const dataDir = process.env.DATA_DIR || path.resolve('data');
 const file = path.join(dataDir, 'state.json');
 
 const defaults = {
-  version: 1,
+  version: 2,
   settings: {
     steelApiKey: '',
     adminPassword: process.env.ADMIN_PASSWORD || 'chenyuhang',
@@ -21,6 +21,7 @@ const defaults = {
   runtime: {
     status: 'idle',
     gptStatus: 'unknown',
+    profileStatus: 'missing',
     limitDetectedAt: null,
     resetAt: null,
     lastRunAt: null,
@@ -32,6 +33,15 @@ const defaults = {
     nextScheduledAt: null,
     executionLockUntil: null,
     lastScheduleKey: null
+  },
+  usage: {
+    status: 'unknown',
+    checkedAt: null,
+    source: null,
+    fiveHour: { usedPercent: null, remainingPercent: null, resetAt: null, label: null },
+    weekly: { usedPercent: null, remainingPercent: null, resetAt: null, label: null },
+    rawPreview: '',
+    error: null
   },
   logs: []
 };
@@ -84,8 +94,15 @@ export function publicState(){
   return {
     settings: {...s.settings, steelApiKey: s.settings.steelApiKey ? '••••••••' : ''},
     runtime: s.runtime,
+    usage: s.usage,
     logs: s.logs.slice(0, 120),
-    steelConnected: Boolean(process.env.STEEL_API_KEY || s.settings.steelApiKey)
+    steelConnected: Boolean(process.env.STEEL_API_KEY || s.settings.steelApiKey),
+    setup: {
+      steel: Boolean(process.env.STEEL_API_KEY || s.settings.steelApiKey),
+      profile: Boolean(s.runtime.steelProfileId),
+      workUrl: Boolean(s.settings.workUrl),
+      interactiveWorkUrl: Boolean(s.settings.workUrl && !/\/share\//i.test(s.settings.workUrl))
+    }
   };
 }
 
