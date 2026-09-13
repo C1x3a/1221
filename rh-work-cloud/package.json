@@ -1,0 +1,16 @@
+{
+  "name": "rh-work-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=20"},
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check lib/store.js && node --check lib/steel.js && node --check lib/executor.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "playwright-core": "^1.55.0",
+    "steel-sdk": "^0.18.0"
+  }
+}
