@@ -15,7 +15,9 @@ public final class FlowRules {
             if(has(text,"我的"))return Step.HOME;
         }else{
             if(has(text,"姓名")&&(has(text,"证件")||has(text,"身份证"))&&(has(text,"添加观演人信息")||has(text,"证件类型")||has(text,"确定"))||has(text,"我已阅读并同意")&&has(text,"确定"))return Step.FORM;
-            if(has(text,"添加/修改观演人信息"))return Step.LIST;
+            // 猫眼有旧人员时会把按钮文字拆成多个无障碍节点；“常用信息”是该列表页稳定标题。
+            if(has(text,"常用信息")&&(has(text,"观演人信息")||has(text,"修改观演人信息")||has(text,"身份证")))return Step.LIST;
+            if(has(text,"添加/修改观演人信息")||has(text,"修改观演人信息"))return Step.LIST;
             if(has(text,"观演人信息"))return Step.PROFILE;
             if(has(text,"我的"))return Step.HOME;
         }

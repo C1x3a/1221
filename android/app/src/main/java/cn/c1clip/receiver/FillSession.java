@@ -1,7 +1,7 @@
 package cn.c1clip.receiver;
 /** Per-person submission guard: never retry a request whose outcome is unknown. */
 public final class FillSession {
-    public static final int MAX_ATTEMPTS=6;
+    public static final int MAX_ATTEMPTS=3;
     public int index,attempts=0;
     public boolean pending=false,retryable=false,successSignal=false;
     public long sentAt=0;
