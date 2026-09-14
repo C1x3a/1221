@@ -25,6 +25,15 @@ public final class FlowRules {
         }
         return Step.UNKNOWN;
     }
+    /** Strong enough to bind a different foreground WebView package to the running task. */
+    public static boolean identifiesPlatformFlow(Platform platform,Set<String> text){
+        if(platform==Platform.PIAOXINGQIU){
+            if(any(text,"新增观演/赛人","新增观演人","添加观演/赛人","请阅读并同意《敏感个人信息授权书》"))return true;
+            return any(text,"观演/赛人","观演赛人")&&(any(text,"新增观演","证件号码","身份证")||maskedIdentity(text));
+        }
+        if(any(text,"添加/修改观演人信息","修改观演人信息","新增观演人信息","我已阅读并同意《实名说明》"))return true;
+        return any(text,"常用信息","观演人信息")&&(any(text,"添加观演","修改观演","身份证")||maskedIdentity(text));
+    }
     public static String platformName(Platform p){return p==Platform.PIAOXINGQIU?"票星球":"猫眼";}
     public static String profileLabel(Platform p){return p==Platform.PIAOXINGQIU?"观演/赛人":"观演人信息";}
     public static String addLabel(Platform p){return p==Platform.PIAOXINGQIU?"新增观演/赛人":"添加/修改观演人信息";}

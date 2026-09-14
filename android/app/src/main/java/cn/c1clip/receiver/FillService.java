@@ -19,7 +19,7 @@ public final class FillService extends AccessibilityService {
     public static String status="准备就绪，选择填写平台开始";
     public static int completed=0,total=0;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private String target="",batchId="",afterPkg="",configuredPkg="",signal="",maoyanPkg="",planetPkg="";
+    private String target="",runtimeTarget="",batchId="",afterPkg="",configuredPkg="",signal="",maoyanPkg="",planetPkg="";
     private FlowRules.Platform platform=FlowRules.Platform.MAOYAN;
     private List<String[]> people=new ArrayList<>();private FillSession session;
     private long deadline,unknownSince,nextAction,hopAt,pageSince,lastNavAt;private int hopStage,hopDelay,agreementAttempts,navAttempts,unknownPhase,listScanPhase,listScanMoves,nameActivationAttempts,idActivationAttempts,saveClickRetries,recoverAttempts;
@@ -34,7 +34,7 @@ public final class FillService extends AccessibilityService {
     public static boolean isRunning(){return active!=null&&active.running;}
     public static boolean start(String pkg,FlowRules.Platform platform,List<String[]> persons,String batch,String after,int stayMs,String maoyan,String planet,String configured) throws Exception {
         if(active==null||persons.isEmpty())return false;
-        FillService s=active;s.finish("正在准备");s.target=pkg;s.platform=platform;s.batchId=batch;s.afterPkg=after.equals(pkg)?"":after;s.configuredPkg=configured;s.hopDelay=stayMs;s.maoyanPkg=maoyan;s.planetPkg=planet;
+        FillService s=active;s.finish("正在准备");s.target=pkg;s.runtimeTarget=pkg;s.platform=platform;s.batchId=batch;s.afterPkg=after.equals(pkg)?"":after;s.configuredPkg=configured;s.hopDelay=stayMs;s.maoyanPkg=maoyan;s.planetPkg=planet;
         s.people=new ArrayList<>();Set<String> unique=new HashSet<>();for(String[] person:persons)if(unique.add(person[0]+"|"+person[1]))s.people.add(person.clone());
         JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0,attempts=0;boolean pending=false,verifying=false;
         if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");attempts=saved.optInt("attempts",0);verifying=saved.optBoolean("verifying",false);}
@@ -45,7 +45,7 @@ public final class FillService extends AccessibilityService {
     }
     public static void cancel(String reason){if(active!=null&&active.running)active.finish(reason);}
     @Override public void onAccessibilityEvent(AccessibilityEvent event){
-        if(!running||hopStage!=0||event.getPackageName()==null||!target.contentEquals(event.getPackageName()))return;
+        if(!running||hopStage!=0||event.getPackageName()==null||!isTaskPackage(event.getPackageName().toString()))return;
         if(event.getEventType()==AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED){StringBuilder b=new StringBuilder();for(CharSequence t:event.getText())b.append(t);signal=b.toString();}
         // Poll quickly but never bypass the minimum interval after an action.
         if(SystemClock.elapsedRealtime()>=nextAction)schedule(80);
@@ -55,7 +55,7 @@ public final class FillService extends AccessibilityService {
     private void schedule(long delay){handler.removeCallbacks(step);handler.postDelayed(step,delay);}
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void announce(String text){status=text;updateOverlay();sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
-    private void finish(String reason){running=false;paused=false;handler.removeCallbacksAndMessages(null);removeOverlay();target="";batchId="";afterPkg="";configuredPkg="";signal="";people.clear();restrict(getPackageName());announce(reason);}
+    private void finish(String reason){running=false;paused=false;handler.removeCallbacksAndMessages(null);removeOverlay();target="";runtimeTarget="";batchId="";afterPkg="";configuredPkg="";signal="";people.clear();restrict(getPackageName());announce(reason);}
     private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;saveClickRetries=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;verificationBack=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
     private String progressKey(){return platform==FlowRules.Platform.PIAOXINGQIU?"fillProgress_PIAOXINGQIU":"fillProgress_MAOYAN";}
     private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",pending).put("verifying",session.verificationStarted).put("attempts",session.attempts));Vault.write(this,state);}}
@@ -110,8 +110,17 @@ public final class FillService extends AccessibilityService {
     private void removeOverlay(){if(overlay!=null&&windowManager!=null)try{windowManager.removeView(overlay);}catch(Exception ignored){}overlay=null;overlayTitle=null;overlayStatus=null;overlayToggle=null;overlayMinimize=null;overlayProgress=null;overlayDetails=null;overlayMinimized=false;}
     private void openConfiguredApp(){
         if(!running)return;if(configuredPkg==null||configuredPkg.isEmpty()){announce("尚未设置要切换的软件，请回接收端设置");return;}if(configuredPkg.equals(target)){announce("设置的软件就是当前填写平台");return;}
-        AccessibilityNodeInfo root=getRootInActiveWindow();String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();String destination=activePkg.equals(target)?configuredPkg:target;String destinationName=destination.equals(target)?FlowRules.platformName(platform):"设置的软件";
-        try{checkpoint(session.pending);restrict(target,configuredPkg);if(!launch(destination)){announce("无法打开"+destinationName+"，填写进度仍保留");return;}announce("正在切换到"+destinationName+"，填写进度已保留");schedule(700);}catch(Exception e){announce("切换应用失败，填写任务仍保留");}
+        AccessibilityNodeInfo root=findTaskRoot(false);String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();String destination=isTaskPackage(activePkg)?configuredPkg:target;String destinationName=destination.equals(target)?FlowRules.platformName(platform):"设置的软件";
+        try{checkpoint(session.pending);restrictForTask(configuredPkg);if(!launch(destination)){announce("无法打开"+destinationName+"，填写进度仍保留");return;}announce("正在切换到"+destinationName+"，填写进度已保留");schedule(700);}catch(Exception e){announce("切换应用失败，填写任务仍保留");}
+    }
+    private boolean isTaskPackage(String pkg){return pkg!=null&&!pkg.isEmpty()&&(pkg.equals(target)||pkg.equals(runtimeTarget));}
+    private void restrictForTask(String... extras){LinkedHashSet<String> packages=new LinkedHashSet<>();if(!target.isEmpty())packages.add(target);if(!runtimeTarget.isEmpty())packages.add(runtimeTarget);for(String extra:extras)if(extra!=null&&!extra.isEmpty())packages.add(extra);restrict(packages.toArray(new String[0]));}
+    private AccessibilityNodeInfo findTaskRoot(boolean bindRecognized){
+        List<AccessibilityNodeInfo> roots=new ArrayList<>();AccessibilityNodeInfo activeRoot=getRootInActiveWindow();if(activeRoot!=null)roots.add(activeRoot);
+        try{for(AccessibilityWindowInfo window:getWindows())if((window.isActive()||window.isFocused())&&window.getType()==AccessibilityWindowInfo.TYPE_APPLICATION){AccessibilityNodeInfo root=window.getRoot();if(root!=null&&!roots.contains(root))roots.add(root);}}catch(Exception ignored){}
+        for(AccessibilityNodeInfo root:roots){String pkg=root.getPackageName()==null?"":root.getPackageName().toString();if(isTaskPackage(pkg))return root;}
+        if(bindRecognized)for(AccessibilityNodeInfo root:roots){String pkg=root.getPackageName()==null?"":root.getPackageName().toString();if(pkg.isEmpty()||pkg.equals(getPackageName())||pkg.equals(configuredPkg))continue;List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);if(FlowRules.identifiesPlatformFlow(platform,words(nodes))){runtimeTarget=pkg;restrictForTask(configuredPkg);announce("已识别"+FlowRules.platformName(platform)+"当前流程页面，继续核对保存结果");return root;}}
+        return activeRoot;
     }
     private boolean savedRow(List<AccessibilityNodeInfo> nodes,String name,String id){
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&FillSession.maskedIdMatches(text(n),id)){
@@ -138,9 +147,9 @@ public final class FillService extends AccessibilityService {
         if(session.index>=people.size()){allDone();return;}
         String app=FlowRules.platformName(platform);
         if(now<nextAction){schedule(nextAction-now);return;}
-        AccessibilityNodeInfo root=getRootInActiveWindow();String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();
+        AccessibilityNodeInfo root=findTaskRoot(true);String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();
         if(activePkg.equals(getPackageName())){paused=true;announce("已回到接收端，任务已暂停；点继续或平台按钮恢复");schedule(700);return;}
-        if(root==null||!target.equals(activePkg)){announce("等待回到"+app+"，不会操作其他应用");schedule(700);return;}
+        if(root==null||!isTaskPackage(activePkg)){announce("等待回到"+app+"，不会操作其他应用");schedule(700);return;}
         if(now>deadline){paused=true;announce("等待页面超过 3 分钟，已暂停避免重新打开后循环；请确认页面后点继续");schedule(700);return;}
         List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> visible=words(nodes);
         if(platform==FlowRules.Platform.PIAOXINGQIU&&session.pending&&FlowRules.planetConsentDialog(visible)){
@@ -289,12 +298,12 @@ public final class FillService extends AccessibilityService {
     private boolean launch(String pkg){try{Intent i=getPackageManager().getLaunchIntentForPackage(pkg);if(i==null)return false;startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));return true;}catch(Exception e){return false;}}
     private void allDone(){
         if(afterPkg.isEmpty()){finish("全部 "+total+" 人已在"+FlowRules.platformName(platform)+"保存");return;}
-        restrict(target,afterPkg);if(!launch(afterPkg)){finish("全部资料已保存，但后续应用无法打开");return;}hopStage=1;hopAt=SystemClock.elapsedRealtime();announce("全部资料已保存，正在打开所选应用");schedule(250);
+        restrictForTask(afterPkg);if(!launch(afterPkg)){finish("全部资料已保存，但后续应用无法打开");return;}hopStage=1;hopAt=SystemClock.elapsedRealtime();announce("全部资料已保存，正在打开所选应用");schedule(250);
     }
     private void hop(long now){
         AccessibilityNodeInfo root=getRootInActiveWindow();String pkg=root==null?"":String.valueOf(root.getPackageName());
         if(hopStage==1){if(pkg.equals(afterPkg)){hopStage=2;hopAt=now;announce("已打开所选应用，即将返回"+FlowRules.platformName(platform));schedule(hopDelay);}else if(now-hopAt>6000)finish("资料已保存，系统未允许打开所选应用");else schedule(250);return;}
         if(hopStage==2){if(!pkg.equals(afterPkg)){finish("资料已保存；你已切换页面，自动返回已取消");return;}if(!launch(target)){finish("资料已保存，请手动返回"+FlowRules.platformName(platform));return;}hopStage=3;hopAt=now;schedule(250);return;}
-        if(pkg.equals(target))finish("全部 "+total+" 人已保存，已返回"+FlowRules.platformName(platform));else if(now-hopAt>6000)finish("资料已保存，请手动返回"+FlowRules.platformName(platform));else schedule(250);
+        if(isTaskPackage(pkg))finish("全部 "+total+" 人已保存，已返回"+FlowRules.platformName(platform));else if(now-hopAt>6000)finish("资料已保存，请手动返回"+FlowRules.platformName(platform));else schedule(250);
     }
 }
