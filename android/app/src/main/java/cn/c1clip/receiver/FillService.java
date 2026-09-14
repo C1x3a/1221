@@ -22,7 +22,7 @@ public final class FillService extends AccessibilityService {
     private String target="",batchId="",afterPkg="",configuredPkg="",signal="",maoyanPkg="",planetPkg="";
     private FlowRules.Platform platform=FlowRules.Platform.MAOYAN;
     private List<String[]> people=new ArrayList<>();private FillSession session;
-    private long deadline,unknownSince,nextAction,hopAt,pageSince,lastNavAt;private int hopStage,hopDelay,agreementAttempts,navAttempts,unknownPhase,listScanPhase,listScanMoves,nameActivationAttempts,idActivationAttempts,saveClickRetries;
+    private long deadline,unknownSince,nextAction,hopAt,pageSince,lastNavAt;private int hopStage,hopDelay,agreementAttempts,navAttempts,unknownPhase,listScanPhase,listScanMoves,nameActivationAttempts,idActivationAttempts,saveClickRetries,recoverAttempts;
     private boolean running,paused,agreementClicked,backSent,verificationBack;
     private FlowRules.Step last=FlowRules.Step.UNKNOWN;
     private FlowRules.Step lastSeen=FlowRules.Step.UNKNOWN;
@@ -36,12 +36,12 @@ public final class FillService extends AccessibilityService {
         if(active==null||persons.isEmpty())return false;
         FillService s=active;s.finish("正在准备");s.target=pkg;s.platform=platform;s.batchId=batch;s.afterPkg=after.equals(pkg)?"":after;s.configuredPkg=configured;s.hopDelay=stayMs;s.maoyanPkg=maoyan;s.planetPkg=planet;
         s.people=new ArrayList<>();Set<String> unique=new HashSet<>();for(String[] person:persons)if(unique.add(person[0]+"|"+person[1]))s.people.add(person.clone());
-        JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0,attempts=0;boolean pending=false;
-        if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");attempts=saved.optInt("attempts",0);}
+        JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0,attempts=0;boolean pending=false,verifying=false;
+        if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");attempts=saved.optInt("attempts",0);verifying=saved.optBoolean("verifying",false);}
         if(index<0||index>s.people.size())throw new Exception("进度不匹配，请接收新资料");
         // A newly started run must verify a previously completed list again. This catches people deleted in the ticket app.
         if(index==s.people.size()){index=0;pending=false;attempts=0;}
-        s.session=new FillSession(index,pending);s.session.attempts=attempts;completed=index;total=s.people.size();s.running=true;s.paused=false;s.hopStage=0;s.resetPerson();s.restrict(pkg);s.showOverlay();s.announce("正在准备 "+(index+1)+" / "+total+" 人");s.schedule(500);return true;
+        s.session=new FillSession(index,pending,verifying);s.session.attempts=attempts;completed=index;total=s.people.size();s.running=true;s.paused=false;s.hopStage=0;s.resetPerson();s.backSent=s.session.verificationStarted;s.verificationBack=s.session.verificationStarted;s.restrict(pkg);s.showOverlay();s.announce("正在准备 "+(index+1)+" / "+total+" 人");s.schedule(500);return true;
     }
     public static void cancel(String reason){if(active!=null&&active.running)active.finish(reason);}
     @Override public void onAccessibilityEvent(AccessibilityEvent event){
@@ -56,12 +56,12 @@ public final class FillService extends AccessibilityService {
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void announce(String text){status=text;updateOverlay();sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
     private void finish(String reason){running=false;paused=false;handler.removeCallbacksAndMessages(null);removeOverlay();target="";batchId="";afterPkg="";configuredPkg="";signal="";people.clear();restrict(getPackageName());announce(reason);}
-    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;saveClickRetries=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;verificationBack=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
+    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;saveClickRetries=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;verificationBack=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
     private String progressKey(){return platform==FlowRules.Platform.PIAOXINGQIU?"fillProgress_PIAOXINGQIU":"fillProgress_MAOYAN";}
-    private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",pending).put("attempts",session.attempts));Vault.write(this,state);}}
+    private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",pending).put("verifying",session.verificationStarted).put("attempts",session.attempts));Vault.write(this,state);}}
     private void collect(AccessibilityNodeInfo node,List<AccessibilityNodeInfo> out){if(node==null||out.size()>=1200)return;out.add(node);for(int i=0;i<node.getChildCount()&&out.size()<1200;i++)collect(node.getChild(i),out);}
     private String text(AccessibilityNodeInfo n){return n.getText()==null?"":n.getText().toString();}
-    private Set<String> words(List<AccessibilityNodeInfo> nodes){Set<String> result=new HashSet<>();for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){result.add(FlowRules.norm(text(n)));if(n.getContentDescription()!=null)result.add(FlowRules.norm(n.getContentDescription().toString()));}return result;}
+    private Set<String> words(List<AccessibilityNodeInfo> nodes){Set<String> result=new HashSet<>();int editable=0;for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){result.add(FlowRules.norm(text(n)));if(n.getContentDescription()!=null)result.add(FlowRules.norm(n.getContentDescription().toString()));if(n.getViewIdResourceName()!=null)result.add(FlowRules.norm(n.getViewIdResourceName()));if(isTextField(n))editable++;}if(editable>=2)result.add("__forminputs__");return result;}
     private boolean click(AccessibilityNodeInfo node){for(int i=0;i<4&&node!=null;i++,node=node.getParent())if(node.isVisibleToUser()&&node.isEnabled()&&node.isClickable())return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);return false;}
     private AccessibilityNodeInfo unique(List<AccessibilityNodeInfo> nodes,String... labels){Set<String> wanted=new HashSet<>(Arrays.asList(labels));Map<String,AccessibilityNodeInfo> found=new LinkedHashMap<>();for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&(wanted.contains(FlowRules.norm(text(n)))||wanted.contains(FlowRules.norm(String.valueOf(n.getContentDescription()))))){Rect r=new Rect();n.getBoundsInScreen(r);found.put(r.toShortString(),n);}return found.size()==1?found.values().iterator().next():null;}
     private AccessibilityNodeInfo best(List<AccessibilityNodeInfo> nodes,String label){
@@ -79,7 +79,7 @@ public final class FillService extends AccessibilityService {
     private boolean navigationReady(String key,long now){
         if(!key.equals(lastNavKey)){lastNavKey=key;lastNavAt=0;navAttempts=0;}
         if(lastNavAt!=0&&now-lastNavAt<2200){schedule(Math.max(150,2200-(now-lastNavAt)));return false;}
-        if(navAttempts>=3){announce("页面没有响应，正在重新打开"+FlowRules.platformName(platform));launch(target);lastNavAt=now;navAttempts=0;acted(3500);return false;}
+        if(navAttempts>=3){paused=true;announce("同一入口连续 3 次没有响应，已暂停避免重复跳转；请确认页面后点继续");schedule(700);return false;}
         lastNavAt=now;navAttempts++;return true;
     }
     private void waitUnknown(String reason){
@@ -90,7 +90,7 @@ public final class FillService extends AccessibilityService {
         if(unknownPhase==1&&waited>=10000){unknownPhase=2;paused=true;announce("无法安全识别当前页面，已暂停；请手动进入首页或人员页后点继续");schedule(800);return;}
         schedule(500);
     }
-    private void recover(String reason){announce(reason+"，等待当前页面重新识别");lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;acted(900);}
+    private void recover(String reason){if(++recoverAttempts>8){paused=true;announce(reason+"连续未成功，已暂停避免循环；请确认当前页面后点继续");schedule(700);return;}announce(reason+"，等待当前页面重新识别（"+recoverAttempts+" / 8）");lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;acted(900);}
 
     private Button overlayButton(String text,Runnable run){Button b=new Button(this);b.setText(text);b.setTextSize(9);b.setAllCaps(false);b.setMinHeight(dp(30));b.setPadding(dp(2),0,dp(2),0);b.setOnClickListener(v->run.run());return b;}
     private Button overlayMiniButton(String text,Runnable run){Button b=new Button(this);b.setText(text);b.setTextSize(10);b.setAllCaps(false);b.setMinWidth(0);b.setMinHeight(0);b.setPadding(0,0,0,0);b.setOnClickListener(v->run.run());return b;}
@@ -141,7 +141,7 @@ public final class FillService extends AccessibilityService {
         AccessibilityNodeInfo root=getRootInActiveWindow();String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();
         if(activePkg.equals(getPackageName())){paused=true;announce("已回到接收端，任务已暂停；点继续或平台按钮恢复");schedule(700);return;}
         if(root==null||!target.equals(activePkg)){announce("等待回到"+app+"，不会操作其他应用");schedule(700);return;}
-        if(now>deadline){deadline=now+180000;launch(target);announce("等待超时，正在重新打开"+app+"一次");acted(3500);return;}
+        if(now>deadline){paused=true;announce("等待页面超过 3 分钟，已暂停避免重新打开后循环；请确认页面后点继续");schedule(700);return;}
         List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> visible=words(nodes);
         if(platform==FlowRules.Platform.PIAOXINGQIU&&session.pending&&FlowRules.planetConsentDialog(visible)){
             AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球授权弹窗 · "+(session.index+1)+" / "+total);
@@ -168,7 +168,7 @@ public final class FillService extends AccessibilityService {
                     announce("添加失败，正在自动重试");acted(1200);return;
                 }
                 if(session.sentAt>0&&now-session.sentAt>1800&&!backSent&&saveClickRetries<3){AccessibilityNodeInfo retry=best(nodes,FlowRules.confirmLabel(platform));if(retry!=null&&retry.isEnabled()){saveClickRetries++;announce("页面未跳转，正在重试“"+FlowRules.confirmLabel(platform)+"” "+saveClickRetries+" / 3");clickOrTap(retry);acted(850);return;}}
-                if((session.sentAt==0||now-session.sentAt>8000)&&!backSent){verificationBack=true;backSent=true;performGlobalAction(GLOBAL_ACTION_BACK);announce("仅返回一次，正在列表核对保存结果");acted(1400);return;}
+                if((session.sentAt==0||now-session.sentAt>8000)&&!backSent){verificationBack=true;backSent=true;session.startedVerification();try{checkpoint(true);}catch(Exception e){paused=true;announce("无法保存核对状态，已暂停避免重复返回");schedule(700);return;}performGlobalAction(GLOBAL_ACTION_BACK);announce("仅返回一次，正在列表核对保存结果");acted(1400);return;}
                 if(backSent&&now-session.sentAt>14000){paused=true;announce("未能回到人员列表，已暂停；请手动进入人员列表后点继续");schedule(700);return;}
                 schedule(220);return;
             }

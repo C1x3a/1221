@@ -7,17 +7,19 @@ public final class FlowRules {
     public enum FormStage { NAME, ID, AGREEMENT, CONFIRM, SAVING }
     public static String norm(String s){return s==null?"":s.replaceAll("\\s+","").replace("＋","+");}
     private static boolean has(Set<String> values,String part){for(String v:values)if(v.contains(part))return true;return false;}
+    private static boolean any(Set<String> values,String... parts){for(String p:parts)if(has(values,p))return true;return false;}
+    private static boolean maskedIdentity(Set<String> values){for(String v:values)if(v.matches(".*[0-9]{3,}[*•●]+[0-9Xx]{3,}.*"))return true;return false;}
     public static Step detect(Platform platform,Set<String> text){
         if(platform==Platform.PIAOXINGQIU){
-            if(has(text,"姓名")&&has(text,"证件")&&(has(text,"新增观演/赛人")||has(text,"证件类型")||has(text,"保存"))||has(text,"请阅读并同意")&&has(text,"保存"))return Step.FORM;
-            if(has(text,"新增观演/赛人"))return Step.LIST;
-            if(has(text,"观演/赛人"))return Step.PROFILE;
+            if((has(text,"__forminputs__")&&any(text,"保存","确认"))||(has(text,"姓名")&&any(text,"证件","身份证")&&any(text,"新增观演/赛人","新增观演人","证件类型","保存"))||has(text,"请阅读并同意")&&any(text,"保存","确认"))return Step.FORM;
+            if(any(text,"新增观演/赛人","新增观演人","添加观演/赛人")||(maskedIdentity(text)&&any(text,"观演/赛人","观演人","赛人")))return Step.LIST;
+            if(any(text,"观演/赛人","观演赛人")&&any(text,"我的抢票","全部订单","身份认证"))return Step.PROFILE;
             if(has(text,"我的"))return Step.HOME;
         }else{
-            if(has(text,"姓名")&&(has(text,"证件")||has(text,"身份证"))&&(has(text,"添加观演人信息")||has(text,"证件类型")||has(text,"确定"))||has(text,"我已阅读并同意")&&has(text,"确定"))return Step.FORM;
+            if((has(text,"__forminputs__")&&any(text,"确定","保存"))||(has(text,"姓名")&&any(text,"证件","身份证")&&any(text,"添加观演人信息","新增观演人信息","证件类型","确定","保存"))||has(text,"我已阅读并同意")&&any(text,"确定","保存"))return Step.FORM;
             // 猫眼有旧人员时会把按钮文字拆成多个无障碍节点；“常用信息”是该列表页稳定标题。
-            if(has(text,"常用信息")&&(has(text,"观演人信息")||has(text,"修改观演人信息")||has(text,"身份证")))return Step.LIST;
-            if(has(text,"添加/修改观演人信息")||has(text,"修改观演人信息"))return Step.LIST;
+            if(has(text,"常用信息")&&any(text,"观演人信息","修改观演人信息","添加观演人信息","身份证"))return Step.LIST;
+            if(any(text,"添加/修改观演人信息","修改观演人信息","新增观演人信息")||(maskedIdentity(text)&&any(text,"观演人信息","常用信息")))return Step.LIST;
             if(has(text,"观演人信息"))return Step.PROFILE;
             if(has(text,"我的"))return Step.HOME;
         }
