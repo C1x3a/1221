@@ -1,0 +1,15 @@
+{
+  "name": "rh-work-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "playwright-core": "^1.55.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0"
+  }
+}
