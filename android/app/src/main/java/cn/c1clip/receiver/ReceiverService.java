@@ -23,7 +23,7 @@ public final class ReceiverService extends Service {
     private Notification notification(){
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,ReceiverService.class).setAction("STOP"),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
-        return new Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("多机接收 · 后台运行").setContentText(status).setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(true).setContentIntent(open).addAction(new Notification.Action.Builder(null,"停止接收及辅助填写",stop).build()).build();
+        return new Notification.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.stat_notify_sync).setContentTitle("RH信息接收 · 后台运行").setContentText(status).setVisibility(Notification.VISIBILITY_PRIVATE).setOngoing(true).setContentIntent(open).addAction(new Notification.Action.Builder(null,"停止接收及辅助填写",stop).build()).build();
     }
     @Override public void onCreate(){super.onCreate();getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL,"后台接收状态",NotificationManager.IMPORTANCE_LOW));startForeground(10,notification());}
     @Override public int onStartCommand(Intent intent,int flags,int startId){

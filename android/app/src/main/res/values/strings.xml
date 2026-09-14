@@ -1,1 +1,1 @@
-<resources><string name="accessibility_description">点击猫眼或票星球后，识别当前页面并按顺序填写本机最新资料中的全部人员，勾选对应协议并点击确定或保存。票星球出现授权确认框时点击同意；保存后在人员列表实际核对并继续下一人。验证码、登录失效、资料错误、锁屏或新资料到达时停止。悬浮窗可暂停任务并在设置的软件与填写平台间切换。不上传屏幕内容。</string></resources>
+<resources><string name="app_name">RH信息接收</string><string name="accessibility_service_name">RH信息接收·平台辅助填写</string><string name="accessibility_description">点击猫眼或票星球后，识别当前页面并按顺序填写本机最新资料中的全部人员，勾选对应协议并点击确定或保存。票星球出现授权确认框时点击同意；保存后在人员列表实际核对并继续下一人。验证码、登录失效、资料错误、锁屏或新资料到达时停止。悬浮窗可暂停任务并在设置的软件与填写平台间切换。不上传屏幕内容。</string></resources>
