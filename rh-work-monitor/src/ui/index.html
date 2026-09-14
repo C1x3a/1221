@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>RH Work Monitor</title></head>
+<body>
+<h2>RH Work Monitor</h2>
+<p id="status">正在启动...</p>
+<script>
+setInterval(()=>document.getElementById('status').innerText='监控运行中 '+new Date().toLocaleTimeString(),1000)
+</script>
+</body>
+</html>
