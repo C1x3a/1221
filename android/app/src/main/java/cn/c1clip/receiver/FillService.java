@@ -147,7 +147,11 @@ public final class FillService extends AccessibilityService {
             AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球授权弹窗 · "+(session.index+1)+" / "+total);
             if(agree==null||!clickOrTap(agree)){announce("等待票星球授权弹窗的“同意”按钮");schedule(450);return;}acted(650);return;
         }
-        FlowRules.Step page=FlowRules.detect(platform,visible);if(!stable(page,now)){schedule(180);return;}last=page;
+        // The add/modify control is the strongest list-page signal. Some Xiaomi WebViews expose its
+        // clickable rectangle but omit the text, so resolve the actual control before text-only routing.
+        AccessibilityNodeInfo addControl=addPersonButton(nodes);FlowRules.Step textPage=FlowRules.detect(platform,visible);
+        // A form title can contain “添加观演人信息”, so completed form evidence always wins.
+        FlowRules.Step page=textPage==FlowRules.Step.FORM?textPage:addControl!=null?FlowRules.Step.LIST:textPage;if(!stable(page,now)){schedule(180);return;}last=page;
         String[] person=people.get(session.index);String name=person[0],id=person[1];
         String feedback=signal+" "+String.join(" ",visible);signal="";
         if(FillSession.permanentError(feedback)){finish(app+"提示资料、验证或频率问题，请处理后继续；已保留进度");return;}
@@ -175,7 +179,7 @@ public final class FillService extends AccessibilityService {
             fillAndSubmit(nodes,name,id,now);return;
         }
         if(page==FlowRules.Step.UNKNOWN){waitUnknown("当前页面未识别");return;}unknownSince=0;unknownPhase=0;
-        AccessibilityNodeInfo button=switch(page){case HOME->best(nodes,"我的");case PROFILE->best(nodes,FlowRules.profileLabel(platform));case LIST->addPersonButton(nodes);default->null;};
+        AccessibilityNodeInfo button=switch(page){case HOME->best(nodes,"我的");case PROFILE->best(nodes,FlowRules.profileLabel(platform));case LIST->addControl!=null?addControl:addPersonButton(nodes);default->null;};
         if(button==null&&page==FlowRules.Step.LIST&&scroll(nodes,false)){acted(400);return;}
         String wanted=page==FlowRules.Step.LIST?FlowRules.addLabel(platform):page==FlowRules.Step.PROFILE?FlowRules.profileLabel(platform):"我的";
         if(button==null){announce("等待页面显示“"+wanted+"”");schedule(600);return;}
@@ -186,7 +190,26 @@ public final class FillService extends AccessibilityService {
         AccessibilityNodeInfo result=best(nodes,FlowRules.addLabel(platform));if(result!=null)return result;
         if(platform==FlowRules.Platform.MAOYAN){result=best(nodes,"修改观演人信息");if(result==null)result=best(nodes,"添加观演人信息");}
         else{result=best(nodes,"新增观演");if(result==null)result=best(nodes,"新增");}
-        return result;
+        if(result!=null)return result;
+        return structuralAddPersonButton(nodes);
+    }
+    private boolean hasMaskedPersonRow(List<AccessibilityNodeInfo> nodes){
+        for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&FlowRules.norm(text(node)).matches(".*[0-9]{3,}[*•●]+[0-9Xx]{3,}.*"))return true;
+        return false;
+    }
+    private AccessibilityNodeInfo structuralAddPersonButton(List<AccessibilityNodeInfo> nodes){
+        // Only use geometry as a fallback on an existing-person list. Old names/IDs are not used to
+        // choose a person; they merely prove that this screen is a list while the wide top control is located.
+        if(!hasMaskedPersonRow(nodes))return null;
+        int width=getResources().getDisplayMetrics().widthPixels,height=getResources().getDisplayMetrics().heightPixels;
+        AccessibilityNodeInfo candidate=null;long bestScore=Long.MIN_VALUE;
+        for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&node.isEnabled()){
+            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||r.width()<width*55/100||r.height()<dp(40)||r.height()>dp(150))continue;
+            if(r.centerY()<height*10/100||r.centerY()>height*35/100)continue;
+            long score=(node.isClickable()?1000000:0)+(long)r.width()*100-Math.abs(r.centerY()-height*18/100);
+            if(score>bestScore){bestScore=score;candidate=node;}
+        }
+        return candidate;
     }
     private void fillAndSubmit(List<AccessibilityNodeInfo> nodes,String name,String id,long now){
         AccessibilityNodeInfo nf=null,df=null;List<AccessibilityNodeInfo> fields=new ArrayList<>();
