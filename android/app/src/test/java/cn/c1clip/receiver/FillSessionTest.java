@@ -11,4 +11,5 @@ public class FillSessionTest {
     @Test public void validatesMaoyanNamesWithPrivacyPrefix(){assertTrue(FillSession.maskedNameMatches("*张蕊","张蕊"));assertTrue(FillSession.maskedNameMatches("**蕊","张蕊"));assertTrue(FillSession.maskedNameMatches("张蕊","张蕊"));assertFalse(FillSession.maskedNameMatches("*梦帆","张蕊"));}
     @Test public void validationAndRateLimitsAreNeverRetried(){assertTrue(FillSession.permanentError("证件号码错误"));assertTrue(FillSession.permanentError("操作频繁，请稍后重试"));assertFalse(FillSession.transientError("操作频繁，请稍后重试"));assertTrue(FillSession.transientError("添加观演人信息失败"));assertFalse(FillSession.transientError("请输入姓名"));}
     @Test public void peopleAdvanceIndependently(){FillSession s=new FillSession(0,false);for(int i=0;i<3;i++){s.submitted(i*2000);assertEquals(i,s.index);s.saved();assertEquals(i+1,s.index);assertEquals(0,s.attempts);}}
+    @Test public void postSaveListSyncWaitIsBounded(){assertTrue(FillSession.shouldWaitForListSync(true,1000,3999));assertFalse(FillSession.shouldWaitForListSync(true,1000,4000));assertFalse(FillSession.shouldWaitForListSync(false,1000,1200));assertFalse(FillSession.shouldWaitForListSync(true,0,1200));}
 }
