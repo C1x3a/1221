@@ -3,6 +3,7 @@ package cn.c1clip.receiver;
 public final class FillSession {
     public static final int MAX_ATTEMPTS=3;
     public static final long LIST_SYNC_GRACE_MS=3000;
+    public static final long FORM_RESULT_TIMEOUT_MS=12000;
     public int index,attempts=0;
     public boolean pending=false,retryable=false,successSignal=false,verificationStarted=false;
     public long sentAt=0;
@@ -14,6 +15,7 @@ public final class FillSession {
     public void failedExplicitly(){if(pending){pending=false;retryable=true;verificationStarted=false;}}
     public void saved(){index++;attempts=0;pending=false;retryable=false;successSignal=false;verificationStarted=false;sentAt=0;}
     public static boolean shouldWaitForListSync(boolean pending,long firstSeen,long now){return pending&&firstSeen>0&&now-firstSeen<LIST_SYNC_GRACE_MS;}
+    public static boolean shouldPauseUncertainForm(boolean pending,long sentAt,long now){return pending&&(sentAt==0||now-sentAt>=FORM_RESULT_TIMEOUT_MS);}
     public static boolean permanentError(String text){return text.matches("(?s).*(验证码|滑块|操作频繁|请求频繁|证件.*错误|证件.*有误|身份证.*错误|身份证.*有误|身份.*不匹配|姓名.*有误|姓名.*不匹配|校验失败|人数上限|数量上限|已达上限|请先登录|登录失效).*");}
     public static boolean transientError(String text){return !permanentError(text)&&text.matches("(?s).*(添加.*失败|保存.*失败|网络异常|网络错误|服务繁忙|稍后重试).*");}
     public static boolean maskedIdMatches(String displayed,String id){

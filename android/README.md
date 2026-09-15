@@ -1,10 +1,10 @@
-# RH信息接收 · 安卓版 0.6.1
+# RH信息接收 · 安卓版 0.6.2
 
 独立原生 Android 接收端，在 android-receiver 分支开发。原 clipboard 网页与 GitHub Pages 保持原样。
 
 ## 使用
 
-1. 安装 RH-Info-Receiver-0.6.1.apk。可直接覆盖 0.2 至 0.6.0，应用 ID 仍为 cn.c1clip.receiver.upgrade。
+1. 安装 RH-Info-Receiver-0.6.2.apk。可直接覆盖 0.2 至 0.6.1，应用 ID 仍为 cn.c1clip.receiver.upgrade。
 2. 打开“连接与权限设置”，粘贴原电脑端对应手机的配对链接，保存并接收。停止该手机旧 APP 或网页的接收，避免同一配对重复连接。
 3. 在系统设置开启辅助填写权限、通知和所需后台联网权限。
 4. 接收资料后点击“猫眼”或“票星球”。首次使用时选择手机上对应的已安装应用，以后直接启动。
