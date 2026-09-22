@@ -134,7 +134,7 @@ public final class FillService extends AccessibilityService {
         if(waited>=12000){unknownPhase=2;paused=true;announce("当前页面仍无法安全识别，已暂停避免中断或重复填写；请停留在当前页面后点继续");schedule(800);return;}
         schedule(500);
     }
-    private void recover(String reason){if(++recoverAttempts>8){paused=true;announce(reason+"连续未成功，已暂停避免循环；请确认当前页面后点继续");schedule(700);return;}announce(reason+"，等待当前页面重新识别（"+recoverAttempts+" / 8）");lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;acted(900);}
+    private void recover(String reason){if(++recoverAttempts>8){paused=true;announce(reason+"连续未成功，已暂停避免循环；请确认当前页面后点继续");schedule(700);return;}announce(reason+"，等待当前页面重新识别（"+recoverAttempts+" / 8）");lastSeen=PlatformPageDetector.Page.UNKNOWN;pageSince=0;acted(900);}
 
     private Button overlayButton(String text,Runnable run){Button b=new Button(this);b.setText(text);b.setTextSize(9);b.setAllCaps(false);b.setMinHeight(dp(30));b.setPadding(dp(2),0,dp(2),0);b.setOnClickListener(v->run.run());return b;}
     private Button overlayMiniButton(String text,Runnable run){Button b=new Button(this);b.setText(text);b.setTextSize(10);b.setAllCaps(false);b.setMinWidth(0);b.setMinHeight(0);b.setPadding(0,0,0,0);b.setOnClickListener(v->run.run());return b;}
