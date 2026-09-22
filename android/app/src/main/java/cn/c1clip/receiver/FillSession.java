@@ -11,8 +11,8 @@ public final class FillSession {
     public enum Phase { CHECKING_EXISTING, OPENING_FORM, FILLING, SUBMITTED_WAIT_VERIFY, VERIFYING_LIST }
 
     public static final int MAX_ATTEMPTS=3;
-    public static final long LIST_SYNC_GRACE_MS=3500;
-    public static final long FORM_RESULT_TIMEOUT_MS=15000;
+    public static final long LIST_SYNC_GRACE_MS=3000;
+    public static final long FORM_RESULT_TIMEOUT_MS=12000;
 
     public int index,attempts=0;
     public boolean pending=false,retryable=false,successSignal=false,verificationStarted=false;
