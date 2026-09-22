@@ -283,13 +283,19 @@ public final class FillService extends AccessibilityService {
 
             session.checkingExisting();
             if(listScanPhase==0){
-                announce("先核对人员是否已存在 · "+(session.index+1)+" / "+total);
+                announce("先回到人员列表顶部核对 · "+(session.index+1)+" / "+total);
                 if(listScanMoves++<24&&scroll(nodes,false)){acted(260);return;}
                 listScanPhase=1;listScanMoves=0;acted(180);return;
             }
             if(listScanPhase==1){
+                announce("正在核对人员是否已存在 · "+(session.index+1)+" / "+total);
                 if(listScanMoves++<40&&scroll(nodes,true)){acted(260);return;}
-                listScanPhase=2;listScanMoves=0;
+                listScanPhase=2;listScanMoves=0;acted(180);return;
+            }
+            if(listScanPhase==2){
+                announce("未发现当前人员，返回列表顶部准备新增");
+                if(listScanMoves++<40&&scroll(nodes,false)){acted(260);return;}
+                listScanPhase=3;listScanMoves=0;acted(180);return;
             }
 
             AccessibilityNodeInfo add=addPersonButton(nodes);
