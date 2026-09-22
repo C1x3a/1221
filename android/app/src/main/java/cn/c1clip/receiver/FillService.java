@@ -25,8 +25,8 @@ public final class FillService extends AccessibilityService {
     private List<String[]> people=new ArrayList<>();private FillSession session;
     private long deadline,unknownSince,nextAction,hopAt,pageSince,lastNavAt,verificationListSince;private int hopStage,hopDelay,agreementAttempts,navAttempts,unknownPhase,listScanPhase,listScanMoves,nameActivationAttempts,idActivationAttempts,recoverAttempts;
     private boolean running,paused,agreementClicked,backSent,wroteName,wroteId,formOpenedFromList;
-    private FlowRules.Step last=FlowRules.Step.UNKNOWN;
-    private FlowRules.Step lastSeen=FlowRules.Step.UNKNOWN;
+    private PlatformPageDetector.Page last=PlatformPageDetector.Page.UNKNOWN;
+    private PlatformPageDetector.Page lastSeen=PlatformPageDetector.Page.UNKNOWN;
     private String lastNavKey="";
     private WindowManager windowManager;private View overlay;private TextView overlayTitle,overlayStatus;private Button overlayToggle,overlayMinimize;private ProgressBar overlayProgress;private LinearLayout overlayDetails;private WindowManager.LayoutParams overlayParams;private boolean overlayMinimized;
     @Override protected void onServiceConnected(){active=this;restrict(getPackageName());status="辅助填写已连接";sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
@@ -47,12 +47,12 @@ public final class FillService extends AccessibilityService {
         if(active==null||persons.isEmpty())return false;
         FillService s=active;s.finish("正在准备");s.target=pkg;s.runtimeTarget=pkg;s.platform=platform;s.batchId=batch;s.afterPkg=after.equals(pkg)?"":after;s.configuredPkg=configured;s.hopDelay=stayMs;s.maoyanPkg=maoyan;s.planetPkg=planet;
         s.people=new ArrayList<>();Set<String> unique=new HashSet<>();for(String[] person:persons)if(unique.add(person[0]+"|"+person[1]))s.people.add(person.clone());
-        JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0,attempts=0;boolean pending=false,verifying=false;
-        if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");attempts=saved.optInt("attempts",0);verifying=saved.optBoolean("verifying",false);}
+        JSONObject saved=Vault.read(s).optJSONObject(s.progressKey());int index=0,attempts=0;boolean pending=false,verifying=false;String phaseName="";long sentAt=0;
+        if(saved!=null&&batch.equals(saved.optString("batch"))&&pkg.equals(saved.optString("target"))&&platform.name().equals(saved.optString("platform",FlowRules.Platform.MAOYAN.name()))){index=saved.optInt("index");pending=saved.optBoolean("pending");attempts=saved.optInt("attempts",0);verifying=saved.optBoolean("verifying",false);phaseName=saved.optString("phase","");sentAt=saved.optLong("sentAt",0);}
         if(index<0||index>s.people.size())throw new Exception("进度不匹配，请接收新资料");
         // A newly started run must verify a previously completed list again. This catches people deleted in the ticket app.
-        if(index==s.people.size()){index=0;pending=false;attempts=0;}
-        s.session=new FillSession(index,pending,verifying);s.session.attempts=attempts;completed=index;total=s.people.size();s.running=true;s.paused=false;s.hopStage=0;s.resetPerson();s.backSent=s.session.verificationStarted;s.restrict(pkg);s.showOverlay();s.announce("正在准备 "+(index+1)+" / "+total+" 人");s.schedule(500);return true;
+        if(index==s.people.size()){index=0;pending=false;attempts=0;phaseName="";sentAt=0;}
+        s.session=phaseName.isEmpty()?new FillSession(index,pending,verifying):new FillSession(index,phaseName,attempts,sentAt);s.session.attempts=attempts;completed=index;total=s.people.size();s.running=true;s.paused=false;s.hopStage=0;s.resetPerson();s.backSent=s.session.verificationStarted;s.restrict(pkg);s.showOverlay();s.announce("正在观察当前页面 · "+(index+1)+" / "+total+" 人");s.schedule(500);return true;
     }
     public static void cancel(String reason){if(active!=null&&active.running)active.finish(reason);}
     @Override public void onAccessibilityEvent(AccessibilityEvent event){
@@ -67,12 +67,45 @@ public final class FillService extends AccessibilityService {
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void announce(String text){status=text;updateOverlay();sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
     private void finish(String reason){running=false;paused=false;handler.removeCallbacksAndMessages(null);removeOverlay();target="";runtimeTarget="";batchId="";afterPkg="";configuredPkg="";signal="";people.clear();restrict(getPackageName());announce(reason);}
-    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;verificationListSince=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;wroteName=false;wroteId=false;formOpenedFromList=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
+    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;verificationListSince=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;wroteName=false;wroteId=false;formOpenedFromList=false;signal="";last=PlatformPageDetector.Page.UNKNOWN;lastSeen=PlatformPageDetector.Page.UNKNOWN;}
     private String progressKey(){return platform==FlowRules.Platform.PIAOXINGQIU?"fillProgress_PIAOXINGQIU":"fillProgress_MAOYAN";}
-    private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",pending).put("verifying",session.verificationStarted).put("attempts",session.attempts));Vault.write(this,state);}}
+    private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",session.needsVerification()).put("verifying",session.verificationStarted).put("phase",session.phase.name()).put("attempts",session.attempts).put("sentAt",session.sentAt));Vault.write(this,state);}}
     private void collect(AccessibilityNodeInfo node,List<AccessibilityNodeInfo> out){if(node==null||out.size()>=1200)return;out.add(node);for(int i=0;i<node.getChildCount()&&out.size()<1200;i++)collect(node.getChild(i),out);}
     private String text(AccessibilityNodeInfo n){return n.getText()==null?"":n.getText().toString();}
-    private Set<String> words(List<AccessibilityNodeInfo> nodes){Set<String> result=new HashSet<>();int editable=0;boolean masked=false;for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){String value=FlowRules.norm(text(n));result.add(value);if(value.matches(".*[0-9]{3,}[*•●]+[0-9Xx]{3,}.*"))masked=true;if(n.getContentDescription()!=null)result.add(FlowRules.norm(n.getContentDescription().toString()));if(n.getViewIdResourceName()!=null)result.add(FlowRules.norm(n.getViewIdResourceName()));if(isTextField(n))editable++;}if(editable>=2)result.add("__forminputs__");if(masked)result.add("__maskedidentity__");return result;}
+    private Set<String> words(List<AccessibilityNodeInfo> nodes){
+        Set<String> result=new LinkedHashSet<>();
+        for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser())for(String value:nodeValues(n))if(!value.isEmpty())result.add(value);
+        return result;
+    }
+    private List<String> nodeValues(AccessibilityNodeInfo n){
+        ArrayList<String> out=new ArrayList<>(3);
+        if(n==null)return out;
+        String t=FlowRules.norm(text(n));if(!t.isEmpty())out.add(t);
+        CharSequence d=n.getContentDescription();if(d!=null){String v=FlowRules.norm(d.toString());if(!v.isEmpty()&&!out.contains(v))out.add(v);}
+        String id=n.getViewIdResourceName();if(id!=null){String v=FlowRules.norm(id);if(!v.isEmpty()&&!out.contains(v))out.add(v);}
+        return out;
+    }
+    private int editableCount(List<AccessibilityNodeInfo> nodes){int count=0;for(AccessibilityNodeInfo n:nodes)if(isTextField(n))count++;return count;}
+    private boolean hasClickableAncestor(AccessibilityNodeInfo node,int levels){
+        for(int i=0;i<levels&&node!=null;i++,node=node.getParent())if(node.isVisibleToUser()&&node.isEnabled()&&node.isClickable())return true;
+        return false;
+    }
+    private boolean hasClickableLabel(List<AccessibilityNodeInfo> nodes,String... labels){
+        for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){
+            boolean match=false;for(String v:nodeValues(n))for(String label:labels)if(v.contains(FlowRules.norm(label))){match=true;break;}
+            if(match&&hasClickableAncestor(n,10))return true;
+        }
+        return false;
+    }
+    private PlatformPageDetector.Snapshot snapshot(List<AccessibilityNodeInfo> nodes){
+        Set<String> values=words(nodes);boolean masked=false;
+        for(String v:values)if(v.matches(".*[0-9]{2,8}[*•●]{2,}[0-9Xx]{2,8}.*")){masked=true;break;}
+        boolean add=platform==FlowRules.Platform.MAOYAN
+                ?hasClickableLabel(nodes,"添加/修改观演人信息","修改观演人信息","添加观演人信息","添加观演人")
+                :hasClickableLabel(nodes,"新增观演/赛人","新增观演人","添加观演/赛人","添加观演人");
+        boolean confirm=platform==FlowRules.Platform.MAOYAN?hasClickableLabel(nodes,"确定","保存"):hasClickableLabel(nodes,"保存","确认");
+        return new PlatformPageDetector.Snapshot(values,editableCount(nodes),masked,add,confirm);
+    }
     private boolean click(AccessibilityNodeInfo node){for(int i=0;i<4&&node!=null;i++,node=node.getParent())if(node.isVisibleToUser()&&node.isEnabled()&&node.isClickable())return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);return false;}
     private AccessibilityNodeInfo unique(List<AccessibilityNodeInfo> nodes,String... labels){Set<String> wanted=new HashSet<>(Arrays.asList(labels));Map<String,AccessibilityNodeInfo> found=new LinkedHashMap<>();for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&(wanted.contains(FlowRules.norm(text(n)))||wanted.contains(FlowRules.norm(String.valueOf(n.getContentDescription()))))){Rect r=new Rect();n.getBoundsInScreen(r);found.put(r.toShortString(),n);}return found.size()==1?found.values().iterator().next():null;}
     private AccessibilityNodeInfo best(List<AccessibilityNodeInfo> nodes,String label){
@@ -86,7 +119,7 @@ public final class FillService extends AccessibilityService {
     private boolean tap(Rect bounds){if(bounds.isEmpty())return false;Path path=new Path();path.moveTo(bounds.centerX(),bounds.centerY());return dispatchGesture(new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,60)).build(),null,null);}
     private boolean clickOrTap(AccessibilityNodeInfo node){if(node==null)return false;if(click(node))return true;Rect r=new Rect();node.getBoundsInScreen(r);return tap(r);}
     private void acted(int ms){nextAction=SystemClock.elapsedRealtime()+ms;schedule(ms);}
-    private boolean stable(FlowRules.Step page,long now){if(page!=lastSeen){lastSeen=page;pageSince=now;lastNavKey="";navAttempts=0;return false;}return now-pageSince>=420;}
+    private boolean stable(PlatformPageDetector.Page page,long now){if(page!=lastSeen){lastSeen=page;pageSince=now;lastNavKey="";navAttempts=0;return false;}return now-pageSince>=500;}
     private boolean navigationReady(String key,long now){
         if(!key.equals(lastNavKey)){lastNavKey=key;lastNavAt=0;navAttempts=0;}
         if(lastNavAt!=0&&now-lastNavAt<2200){schedule(Math.max(150,2200-(now-lastNavAt)));return false;}
@@ -97,7 +130,7 @@ public final class FillService extends AccessibilityService {
         long now=SystemClock.elapsedRealtime();
         if(unknownSince==0){unknownSince=now;unknownPhase=0;announce(reason+"，正在用兼容模式继续识别");schedule(600);return;}
         long waited=now-unknownSince;
-        if(unknownPhase==0&&waited>=3500){unknownPhase=1;lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;announce("页面结构与已知机型不同，正在持续识别；不会重新拉起应用或盲目返回");schedule(700);return;}
+        if(unknownPhase==0&&waited>=3500){unknownPhase=1;lastSeen=PlatformPageDetector.Page.UNKNOWN;pageSince=0;announce("页面结构与已知机型不同，正在持续识别；不会重新拉起应用或盲目返回");schedule(700);return;}
         if(waited>=12000){unknownPhase=2;paused=true;announce("当前页面仍无法安全识别，已暂停避免中断或重复填写；请停留在当前页面后点继续");schedule(800);return;}
         schedule(500);
     }
@@ -141,37 +174,49 @@ public final class FillService extends AccessibilityService {
             for(AccessibilityNodeInfo root:roots){
                 String pkg=root.getPackageName()==null?"":root.getPackageName().toString();
                 if(pkg.isEmpty()||pkg.equals(getPackageName())||pkg.equals(configuredPkg))continue;
-                List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> seen=words(nodes);
-                if(!FlowRules.identifiesPlatformFlow(platform,seen))continue;
-                long score=rootScore(nodes,seen);if(score>bestScore){bestScore=score;bestRecognized=root;bestPkg=pkg;}
+                List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);PlatformPageDetector.Snapshot snap=snapshot(nodes);
+                if(!PlatformPageDetector.identifiesFlow(platform,snap))continue;
+                long score=rootScore(nodes,snap);if(score>bestScore){bestScore=score;bestRecognized=root;bestPkg=pkg;}
             }
             if(bestRecognized!=null){runtimeTarget=bestPkg;restrictForTask(configuredPkg);announce("已识别"+FlowRules.platformName(platform)+"当前流程页面，继续当前步骤");return bestRecognized;}
         }
         return activeRoot;
     }
-    private long rootScore(AccessibilityNodeInfo root){List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);return rootScore(nodes,words(nodes));}
-    private long rootScore(List<AccessibilityNodeInfo> nodes,Set<String> seen){
-        long score=nodes.size()*8L+seen.size()*30L;FlowRules.Step page=FlowRules.detect(platform,seen);
-        if(page!=FlowRules.Step.UNKNOWN)score+=6000;
-        if(seen.contains("__forminputs__"))score+=3500;
-        if(seen.contains("__maskedidentity__"))score+=2500;
-        for(String value:seen){if(value.contains("添加")||value.contains("新增")||value.contains("修改"))score+=120;if(value.contains("观演人")||value.contains("观演/赛人")||value.contains("常用信息"))score+=180;}
+    private long rootScore(AccessibilityNodeInfo root){List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);return rootScore(nodes,snapshot(nodes));}
+    private long rootScore(List<AccessibilityNodeInfo> nodes,PlatformPageDetector.Snapshot snap){
+        PlatformPageDetector.Result detected=PlatformPageDetector.detect(platform,snap);
+        long score=nodes.size()*8L+snap.values.size()*30L;
+        if(detected.page!=PlatformPageDetector.Page.UNKNOWN)score+=7000;
+        if(snap.editableCount>=2)score+=3000;
+        if(snap.maskedIdentity)score+=2200;
+        if(snap.clickableAdd)score+=1800;
+        if(snap.clickableConfirm)score+=1200;
         return score;
     }
     private boolean savedRow(List<AccessibilityNodeInfo> nodes,String name,String id){
-        for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&FillSession.maskedIdMatches(text(n),id)){
-            AccessibilityNodeInfo parent=n.getParent();for(int level=0;level<5&&parent!=null;level++,parent=parent.getParent()){
-                List<AccessibilityNodeInfo> row=new ArrayList<>();collect(parent,row);for(String value:words(row))if(FillSession.maskedNameMatches(value,name))return true;
+        ArrayList<AccessibilityNodeInfo> idNodes=new ArrayList<>();
+        for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){
+            boolean idMatch=false,nameMatch=false;
+            for(String value:nodeValues(n)){if(FillSession.maskedIdMatches(value,id))idMatch=true;if(FillSession.maskedNameMatches(value,name))nameMatch=true;}
+            if(idMatch&&nameMatch)return true;
+            if(idMatch)idNodes.add(n);
+        }
+        for(AccessibilityNodeInfo idNode:idNodes){
+            AccessibilityNodeInfo parent=idNode;
+            for(int level=0;level<8&&parent!=null;level++,parent=parent.getParent()){
+                List<AccessibilityNodeInfo> row=new ArrayList<>();collect(parent,row);
+                for(AccessibilityNodeInfo candidate:row)if(candidate.isVisibleToUser())for(String value:nodeValues(candidate))if(FillSession.maskedNameMatches(value,name))return true;
             }
-            // Xiaomi/MIUI WebView variants may expose the name and ID in sibling virtual nodes without a useful
-            // shared parent. In that case require both values to be on the same visual row/card.
-            Rect identityBounds=new Rect();n.getBoundsInScreen(identityBounds);
-            for(AccessibilityNodeInfo candidate:nodes)if(candidate.isVisibleToUser()&&FillSession.maskedNameMatches(text(candidate),name)){
+            Rect identityBounds=new Rect();idNode.getBoundsInScreen(identityBounds);
+            int rowTolerance=Math.max(dp(96),getResources().getDisplayMetrics().heightPixels*10/100);
+            for(AccessibilityNodeInfo candidate:nodes)if(candidate.isVisibleToUser()){
+                boolean nameMatch=false;for(String value:nodeValues(candidate))if(FillSession.maskedNameMatches(value,name)){nameMatch=true;break;}
+                if(!nameMatch)continue;
                 Rect nameBounds=new Rect();candidate.getBoundsInScreen(nameBounds);
-                int rowTolerance=Math.max(dp(72),getResources().getDisplayMetrics().heightPixels*7/100);
                 if(!identityBounds.isEmpty()&&!nameBounds.isEmpty()&&Math.abs(nameBounds.centerY()-identityBounds.centerY())<=rowTolerance)return true;
             }
-        }return false;
+        }
+        return false;
     }
     private boolean scroll(List<AccessibilityNodeInfo> nodes,boolean forward){for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&n.isScrollable()&&n.performAction(forward?AccessibilityNodeInfo.ACTION_SCROLL_FORWARD:AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD))return true;return false;}
     private final Runnable step=()->tick();
@@ -184,60 +229,122 @@ public final class FillService extends AccessibilityService {
         if(session.index>=people.size()){allDone();return;}
         String app=FlowRules.platformName(platform);
         if(now<nextAction){schedule(nextAction-now);return;}
+
         AccessibilityNodeInfo root=findTaskRoot(true);String activePkg=root==null||root.getPackageName()==null?"":root.getPackageName().toString();
         if(activePkg.equals(getPackageName())){paused=true;announce("已回到接收端，任务已暂停；点继续或平台按钮恢复");schedule(700);return;}
         if(root==null||!isTaskPackage(activePkg)){announce("等待回到"+app+"，不会操作其他应用");schedule(700);return;}
-        if(now>deadline){paused=true;announce("等待页面超过 3 分钟，已暂停避免重新打开后循环；请确认页面后点继续");schedule(700);return;}
-        List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> visible=words(nodes);
-        if(platform==FlowRules.Platform.PIAOXINGQIU&&session.pending&&FlowRules.planetConsentDialog(visible)){
-            AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球授权弹窗 · "+(session.index+1)+" / "+total);
-            if(agree==null||!clickOrTap(agree)){announce("等待票星球授权弹窗的“同意”按钮");schedule(450);return;}acted(650);return;
-        }
-        // Resolve strong form evidence before looking for an add-person control. The same words
-        // ("新增观演/赛人" / "添加观演人信息") are also used as form titles on some WebViews.
-        FlowRules.Step textPage=FlowRules.detect(platform,visible);
-        AccessibilityNodeInfo addControl=textPage==FlowRules.Step.FORM?null:addPersonButton(nodes);
-        if(addControl!=null){visible.add("__addcontrol__");textPage=FlowRules.detect(platform,visible);}
-        FlowRules.Step page=textPage==FlowRules.Step.FORM?textPage:addControl!=null?FlowRules.Step.LIST:textPage;if(!stable(page,now)){schedule(180);return;}last=page;
+        if(now>deadline){paused=true;announce("当前任务等待超过 3 分钟，已暂停并保留状态");schedule(700);return;}
+
+        List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);
+        PlatformPageDetector.Snapshot snap=snapshot(nodes);PlatformPageDetector.Result detected=PlatformPageDetector.detect(platform,snap);
+        PlatformPageDetector.Page page=detected.page;
+        if(!stable(page,now)){schedule(180);return;}last=page;
+
         String[] person=people.get(session.index);String name=person[0],id=person[1];
-        String feedback=signal+" "+String.join(" ",visible);signal="";
-        if(FillSession.permanentError(feedback)){finish(app+"提示资料、验证或频率问题，请处理后继续；已保留进度");return;}
-        if(session.pending&&(feedback.contains("添加成功")||feedback.contains("保存成功")||feedback.contains("提交成功")))session.successSignal=true;
-        if(page==FlowRules.Step.LIST){
-            if(savedRow(nodes,name,id)){try{session.saved();checkpoint(false);completed=session.index;resetPerson();announce("列表已核对，确认存在 "+completed+" / "+total+" 人");schedule(160);}catch(Exception e){finish("进度保存失败，请核对已保存人员");}return;}
-            if(session.pending){
+        String feedback=signal+" "+String.join(" ",snap.values);signal="";
+        if(FillSession.permanentError(feedback)){finish(app+"提示资料、验证或频率问题，请处理后继续；进度已保留");return;}
+        if(session.needsVerification()&&(feedback.contains("添加成功")||feedback.contains("保存成功")||feedback.contains("提交成功")))session.successSignal=true;
+
+        if(page==PlatformPageDetector.Page.CONSENT_DIALOG){
+            if(!session.needsVerification()){session.submitted(now);try{checkpoint(true);}catch(Exception e){finish("无法保存提交状态，已暂停");return;}}
+            AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球敏感信息授权 · "+(session.index+1)+" / "+total);
+            if(agree==null||!clickOrTap(agree)){announce("等待授权弹窗“同意”按钮");schedule(450);return;}
+            acted(700);return;
+        }
+
+        if(page==PlatformPageDetector.Page.PERSON_LIST){
+            unknownSince=0;unknownPhase=0;
+            if(savedRow(nodes,name,id)){
+                try{session.saved();checkpoint(false);completed=session.index;resetPerson();announce("列表核对成功 · "+completed+" / "+total+" 人");schedule(220);}
+                catch(Exception e){finish("进度保存失败，请核对已保存人员");}
+                return;
+            }
+
+            if(session.needsVerification()){
+                if(!session.verificationStarted){session.startedVerification();try{checkpoint(true);}catch(Exception e){finish("无法保存核对状态");return;}}
                 if(verificationListSince==0){verificationListSince=now;listScanPhase=0;listScanMoves=0;}
-                if(FillSession.shouldWaitForListSync(true,verificationListSince,now)){long left=(FillSession.LIST_SYNC_GRACE_MS-(now-verificationListSince)+999)/1000;announce("保存已返回列表，等待资料同步并核对（"+left+"秒）");schedule(300);return;}
-            }
-            if(listScanPhase==0){announce("核对人员是否已存在 · "+(session.index+1)+" / "+total);if(listScanMoves++<60&&scroll(nodes,false)){acted(260);return;}listScanPhase=1;listScanMoves=0;acted(180);return;}
-            if(listScanPhase==1){if(listScanMoves++<60&&scroll(nodes,true)){acted(260);return;}listScanPhase=2;listScanMoves=0;if(session.pending){paused=true;try{checkpoint(true);}catch(Exception e){finish("进度保存失败");return;}announce("列表中暂未核对到当前人员，已暂停且不会重复填写；确认页面后可点继续重新核对");schedule(700);return;}}
-            if(session.pending){announce("等待核对保存结果，不会重新填写");schedule(500);return;}
-            }
-        if(page==FlowRules.Step.FORM){
-            unknownSince=0;
-            if(session.pending){
-                if(session.successSignal&&!backSent){backSent=true;performGlobalAction(GLOBAL_ACTION_BACK);announce("已收到保存成功提示，正在返回列表核对");acted(650);return;}
-                if(FillSession.transientError(feedback)){
-                    session.failedExplicitly();agreementClicked=false;agreementAttempts=0;backSent=false;try{checkpoint(false);}catch(Exception e){finish("进度保存失败");return;}
-                    if(session.attempts>=FillSession.MAX_ATTEMPTS){paused=true;announce("连续保存失败，已暂停并保留当前页面");schedule(700);return;}
-                    announce("添加失败，正在自动重试");acted(1200);return;
+                if(FillSession.shouldWaitForListSync(true,verificationListSince,now)){
+                    long left=(FillSession.LIST_SYNC_GRACE_MS-(now-verificationListSince)+999)/1000;
+                    announce("保存已返回人员列表，等待同步并核对（"+left+"秒）");schedule(300);return;
                 }
-                if(FillSession.shouldPauseUncertainForm(true,session.sentAt,now)){paused=true;try{checkpoint(true);}catch(Exception e){finish("进度保存失败");return;}announce("保存后页面未明确变化，已暂停且不会重复点击或返回；请确认当前页面后点继续");schedule(700);return;}
-                announce("等待保存结果，不重复点击保存");
-                schedule(220);return;
+                if(listScanPhase==0){
+                    announce("正在核对已提交人员 · "+(session.index+1)+" / "+total);
+                    if(listScanMoves++<24&&scroll(nodes,false)){acted(280);return;}
+                    listScanPhase=1;listScanMoves=0;acted(180);return;
+                }
+                if(listScanPhase==1){
+                    if(listScanMoves++<40&&scroll(nodes,true)){acted(280);return;}
+                    listScanPhase=2;listScanMoves=0;
+                }
+                paused=true;try{checkpoint(true);}catch(Exception ignored){}
+                announce("已提交但列表暂未核对到当前人员，已暂停；不会重新填写");
+                schedule(700);return;
             }
+
+            session.checkingExisting();
+            if(listScanPhase==0){
+                announce("先核对人员是否已存在 · "+(session.index+1)+" / "+total);
+                if(listScanMoves++<24&&scroll(nodes,false)){acted(260);return;}
+                listScanPhase=1;listScanMoves=0;acted(180);return;
+            }
+            if(listScanPhase==1){
+                if(listScanMoves++<40&&scroll(nodes,true)){acted(260);return;}
+                listScanPhase=2;listScanMoves=0;
+            }
+
+            AccessibilityNodeInfo add=addPersonButton(nodes);
+            if(add==null){announce("已确认人员列表，但暂未定位新增人员按钮");schedule(500);return;}
+            if(!navigationReady("PERSON_LIST:ADD",now))return;
+            session.openingForm();try{checkpoint(false);}catch(Exception e){finish("无法保存流程状态");return;}
+            if(!clickAddPersonControl(nodes,add,navAttempts)){announce("新增人员按钮未响应，稍后重试");acted(1200);return;}
+            formOpenedFromList=true;UiAdaptation.rememberAdd(this,platform,add);announce("已进入新增人员步骤，等待表单");acted(800);return;
+        }
+
+        if(page==PlatformPageDetector.Page.ADD_FORM){
+            unknownSince=0;unknownPhase=0;
+            if(session.needsVerification()){
+                if(FillSession.transientError(feedback)){
+                    session.failedExplicitly();agreementClicked=false;agreementAttempts=0;backSent=false;
+                    try{checkpoint(false);}catch(Exception e){finish("进度保存失败");return;}
+                    if(session.attempts>=FillSession.MAX_ATTEMPTS){paused=true;announce("连续保存失败，已暂停");schedule(700);return;}
+                    announce("平台明确提示保存失败，允许重新处理当前人员");acted(900);return;
+                }
+                if(FillSession.shouldPauseUncertainForm(true,session.sentAt,now)){
+                    paused=true;try{checkpoint(true);}catch(Exception ignored){}
+                    announce("当前人员已经提交，仍停留在表单；已暂停且不会重新填写");
+                    schedule(700);return;
+                }
+                announce("当前人员已经提交，等待平台返回人员列表；不会重复填写");schedule(300);return;
+            }
+            session.filling();try{checkpoint(false);}catch(Exception e){finish("无法保存填写状态");return;}
             fillAndSubmit(nodes,name,id,now);return;
         }
-        if(page==FlowRules.Step.UNKNOWN){waitUnknown("当前页面未识别");return;}unknownSince=0;unknownPhase=0;
-        AccessibilityNodeInfo button=switch(page){case HOME->best(nodes,"我的");case PROFILE->best(nodes,FlowRules.profileLabel(platform));case LIST->addControl!=null?addControl:addPersonButton(nodes);default->null;};
-        if(button==null&&page==FlowRules.Step.LIST&&scroll(nodes,false)){acted(400);return;}
-        String wanted=page==FlowRules.Step.LIST?FlowRules.addLabel(platform):page==FlowRules.Step.PROFILE?FlowRules.profileLabel(platform):"我的";
-        if(button==null){announce("等待页面显示“"+wanted+"”");schedule(600);return;}
-        if(!navigationReady(page.name()+":"+wanted,now))return;
-        boolean clicked=page==FlowRules.Step.LIST?clickAddPersonControl(nodes,button,navAttempts):clickOrTap(button);
-        if(!clicked){announce("“"+wanted+"”未响应，稍后重试");acted(2200);return;}
-        if(page==FlowRules.Step.LIST){formOpenedFromList=true;UiAdaptation.rememberAdd(this,platform,button);}
-        announce("已点击“"+wanted+"”，等待页面变化");acted(900);
+
+        if(page==PlatformPageDetector.Page.PROFILE){
+            unknownSince=0;unknownPhase=0;
+            AccessibilityNodeInfo entry=findProfileEntry(nodes);
+            if(entry==null){announce("已识别个人页，等待人员信息入口");schedule(500);return;}
+            if(!navigationReady("PROFILE:PERSON",now))return;
+            if(!clickOrTap(entry)){announce("人员信息入口未响应");acted(900);return;}
+            announce(session.needsVerification()?"正在返回人员列表核对已提交结果":"正在进入人员列表");acted(800);return;
+        }
+
+        if(page==PlatformPageDetector.Page.HOME){
+            unknownSince=0;unknownPhase=0;
+            AccessibilityNodeInfo mine=best(nodes,"我的");
+            if(mine==null){announce("已识别首页，等待“我的”入口");schedule(500);return;}
+            if(!navigationReady("HOME:MY",now))return;
+            if(!clickOrTap(mine)){announce("“我的”入口未响应");acted(900);return;}
+            announce("已点击“我的”，重新识别下一页面");acted(800);return;
+        }
+
+        waitUnknown("当前页面证据不足（"+detected.evidence+"）");
+    }
+
+    private AccessibilityNodeInfo findProfileEntry(List<AccessibilityNodeInfo> nodes){
+        AccessibilityNodeInfo result=platform==FlowRules.Platform.PIAOXINGQIU?best(nodes,"观演/赛人"):best(nodes,"观演人信息");
+        if(result==null&&platform==FlowRules.Platform.PIAOXINGQIU)result=best(nodes,"观演人");
+        return result;
     }
     private boolean clickAddPersonControl(List<AccessibilityNodeInfo> nodes,AccessibilityNodeInfo preferred,int attempt){
         if(platform!=FlowRules.Platform.MAOYAN)return clickOrTap(preferred);
