@@ -24,7 +24,7 @@ public final class FillService extends AccessibilityService {
     private FlowRules.Platform platform=FlowRules.Platform.MAOYAN;
     private List<String[]> people=new ArrayList<>();private FillSession session;
     private long deadline,unknownSince,nextAction,hopAt,pageSince,lastNavAt,verificationListSince;private int hopStage,hopDelay,agreementAttempts,navAttempts,unknownPhase,listScanPhase,listScanMoves,nameActivationAttempts,idActivationAttempts,recoverAttempts;
-    private boolean running,paused,agreementClicked,backSent;
+    private boolean running,paused,agreementClicked,backSent,wroteName,wroteId,formOpenedFromList;
     private FlowRules.Step last=FlowRules.Step.UNKNOWN;
     private FlowRules.Step lastSeen=FlowRules.Step.UNKNOWN;
     private String lastNavKey="";
@@ -67,12 +67,12 @@ public final class FillService extends AccessibilityService {
     private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
     private void announce(String text){status=text;updateOverlay();sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
     private void finish(String reason){running=false;paused=false;handler.removeCallbacksAndMessages(null);removeOverlay();target="";runtimeTarget="";batchId="";afterPkg="";configuredPkg="";signal="";people.clear();restrict(getPackageName());announce(reason);}
-    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;verificationListSince=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
+    private void resetPerson(){deadline=SystemClock.elapsedRealtime()+180000;unknownSince=0;nextAction=0;pageSince=0;lastNavAt=0;verificationListSince=0;navAttempts=0;unknownPhase=0;listScanPhase=0;listScanMoves=0;nameActivationAttempts=0;idActivationAttempts=0;recoverAttempts=0;lastNavKey="";agreementClicked=false;agreementAttempts=0;backSent=false;wroteName=false;wroteId=false;formOpenedFromList=false;signal="";last=FlowRules.Step.UNKNOWN;lastSeen=FlowRules.Step.UNKNOWN;}
     private String progressKey(){return platform==FlowRules.Platform.PIAOXINGQIU?"fillProgress_PIAOXINGQIU":"fillProgress_MAOYAN";}
     private void checkpoint(boolean pending) throws Exception {synchronized(Vault.class){JSONObject state=Vault.read(this);state.put(progressKey(),new JSONObject().put("batch",batchId).put("target",target).put("platform",platform.name()).put("index",session.index).put("pending",pending).put("verifying",session.verificationStarted).put("attempts",session.attempts));Vault.write(this,state);}}
     private void collect(AccessibilityNodeInfo node,List<AccessibilityNodeInfo> out){if(node==null||out.size()>=1200)return;out.add(node);for(int i=0;i<node.getChildCount()&&out.size()<1200;i++)collect(node.getChild(i),out);}
     private String text(AccessibilityNodeInfo n){return n.getText()==null?"":n.getText().toString();}
-    private Set<String> words(List<AccessibilityNodeInfo> nodes){Set<String> result=new HashSet<>();int editable=0;for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){result.add(FlowRules.norm(text(n)));if(n.getContentDescription()!=null)result.add(FlowRules.norm(n.getContentDescription().toString()));if(n.getViewIdResourceName()!=null)result.add(FlowRules.norm(n.getViewIdResourceName()));if(isTextField(n))editable++;}if(editable>=2)result.add("__forminputs__");return result;}
+    private Set<String> words(List<AccessibilityNodeInfo> nodes){Set<String> result=new HashSet<>();int editable=0;boolean masked=false;for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()){String value=FlowRules.norm(text(n));result.add(value);if(value.matches(".*[0-9]{3,}[*•●]+[0-9Xx]{3,}.*"))masked=true;if(n.getContentDescription()!=null)result.add(FlowRules.norm(n.getContentDescription().toString()));if(n.getViewIdResourceName()!=null)result.add(FlowRules.norm(n.getViewIdResourceName()));if(isTextField(n))editable++;}if(editable>=2)result.add("__forminputs__");if(masked)result.add("__maskedidentity__");return result;}
     private boolean click(AccessibilityNodeInfo node){for(int i=0;i<4&&node!=null;i++,node=node.getParent())if(node.isVisibleToUser()&&node.isEnabled()&&node.isClickable())return node.performAction(AccessibilityNodeInfo.ACTION_CLICK);return false;}
     private AccessibilityNodeInfo unique(List<AccessibilityNodeInfo> nodes,String... labels){Set<String> wanted=new HashSet<>(Arrays.asList(labels));Map<String,AccessibilityNodeInfo> found=new LinkedHashMap<>();for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&(wanted.contains(FlowRules.norm(text(n)))||wanted.contains(FlowRules.norm(String.valueOf(n.getContentDescription()))))){Rect r=new Rect();n.getBoundsInScreen(r);found.put(r.toShortString(),n);}return found.size()==1?found.values().iterator().next():null;}
     private AccessibilityNodeInfo best(List<AccessibilityNodeInfo> nodes,String label){
@@ -95,10 +95,10 @@ public final class FillService extends AccessibilityService {
     }
     private void waitUnknown(String reason){
         long now=SystemClock.elapsedRealtime();
-        if(unknownSince==0){unknownSince=now;unknownPhase=0;announce(reason+"，等待页面稳定");schedule(600);return;}
+        if(unknownSince==0){unknownSince=now;unknownPhase=0;announce(reason+"，正在用兼容模式继续识别");schedule(600);return;}
         long waited=now-unknownSince;
-        if(unknownPhase==0&&waited>=3500){unknownPhase=1;launch(target);announce("未识别当前页面，已重新打开"+FlowRules.platformName(platform)+"一次");acted(4500);return;}
-        if(unknownPhase==1&&waited>=10000){unknownPhase=2;paused=true;announce("无法安全识别当前页面，已暂停；请手动进入首页或人员页后点继续");schedule(800);return;}
+        if(unknownPhase==0&&waited>=3500){unknownPhase=1;lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;announce("页面结构与已知机型不同，正在持续识别；不会重新拉起应用或盲目返回");schedule(700);return;}
+        if(waited>=12000){unknownPhase=2;paused=true;announce("当前页面仍无法安全识别，已暂停避免中断或重复填写；请停留在当前页面后点继续");schedule(800);return;}
         schedule(500);
     }
     private void recover(String reason){if(++recoverAttempts>8){paused=true;announce(reason+"连续未成功，已暂停避免循环；请确认当前页面后点继续");schedule(700);return;}announce(reason+"，等待当前页面重新识别（"+recoverAttempts+" / 8）");lastSeen=FlowRules.Step.UNKNOWN;pageSince=0;acted(900);}
@@ -143,7 +143,8 @@ public final class FillService extends AccessibilityService {
             Rect identityBounds=new Rect();n.getBoundsInScreen(identityBounds);
             for(AccessibilityNodeInfo candidate:nodes)if(candidate.isVisibleToUser()&&FillSession.maskedNameMatches(text(candidate),name)){
                 Rect nameBounds=new Rect();candidate.getBoundsInScreen(nameBounds);
-                if(!identityBounds.isEmpty()&&!nameBounds.isEmpty()&&Math.abs(nameBounds.centerY()-identityBounds.centerY())<=dp(110))return true;
+                int rowTolerance=Math.max(dp(72),getResources().getDisplayMetrics().heightPixels*7/100);
+                if(!identityBounds.isEmpty()&&!nameBounds.isEmpty()&&Math.abs(nameBounds.centerY()-identityBounds.centerY())<=rowTolerance)return true;
             }
         }return false;
     }
@@ -169,7 +170,7 @@ public final class FillService extends AccessibilityService {
         }
         // The add/modify control is the strongest list-page signal. Some Xiaomi WebViews expose its
         // clickable rectangle but omit the text, so resolve the actual control before text-only routing.
-        AccessibilityNodeInfo addControl=addPersonButton(nodes);FlowRules.Step textPage=FlowRules.detect(platform,visible);
+        AccessibilityNodeInfo addControl=addPersonButton(nodes);if(addControl!=null)visible.add("__addcontrol__");FlowRules.Step textPage=FlowRules.detect(platform,visible);
         // A form title can contain “添加观演人信息”, so completed form evidence always wins.
         FlowRules.Step page=textPage==FlowRules.Step.FORM?textPage:addControl!=null?FlowRules.Step.LIST:textPage;if(!stable(page,now)){schedule(180);return;}last=page;
         String[] person=people.get(session.index);String name=person[0],id=person[1];
@@ -208,7 +209,9 @@ public final class FillService extends AccessibilityService {
         if(button==null){announce("等待页面显示“"+wanted+"”");schedule(600);return;}
         if(!navigationReady(page.name()+":"+wanted,now))return;
         boolean clicked=page==FlowRules.Step.LIST?clickAddPersonControl(nodes,button,navAttempts):clickOrTap(button);
-        if(!clicked){announce("“"+wanted+"”未响应，稍后重试");acted(2200);return;}announce("已点击“"+wanted+"”，等待页面变化");acted(900);
+        if(!clicked){announce("“"+wanted+"”未响应，稍后重试");acted(2200);return;}
+        if(page==FlowRules.Step.LIST){formOpenedFromList=true;UiAdaptation.rememberAdd(this,platform,button);}
+        announce("已点击“"+wanted+"”，等待页面变化");acted(900);
     }
     private boolean clickAddPersonControl(List<AccessibilityNodeInfo> nodes,AccessibilityNodeInfo preferred,int attempt){
         if(platform!=FlowRules.Platform.MAOYAN)return clickOrTap(preferred);
@@ -218,10 +221,19 @@ public final class FillService extends AccessibilityService {
         int width=getResources().getDisplayMetrics().widthPixels;Rect buttonArea=new Rect(dp(24),Math.max(0,label.centerY()-dp(34)),Math.max(dp(48),width-dp(24)),label.centerY()+dp(34));return tap(buttonArea);
     }
     private AccessibilityNodeInfo addPersonButton(List<AccessibilityNodeInfo> nodes){
-        AccessibilityNodeInfo result=best(nodes,FlowRules.addLabel(platform));if(result!=null)return result;
-        if(platform==FlowRules.Platform.MAOYAN){result=best(nodes,"修改观演人信息");if(result==null)result=best(nodes,"添加观演人信息");}
-        else{result=best(nodes,"新增观演");if(result==null)result=best(nodes,"新增");}
+        AccessibilityNodeInfo result=best(nodes,FlowRules.addLabel(platform));
+        if(platform==FlowRules.Platform.MAOYAN){
+            if(result==null)result=best(nodes,"修改观演人信息");
+            if(result==null)result=best(nodes,"添加观演人信息");
+            if(result==null)result=best(nodes,"添加观演人");
+            if(result==null)result=best(nodes,"修改观演人");
+        }else{
+            if(result==null)result=best(nodes,"新增观演");
+            if(result==null)result=best(nodes,"添加观演人");
+            if(result==null)result=best(nodes,"新增");
+        }
         if(result!=null)return result;
+        result=UiAdaptation.findAdd(this,platform,nodes);if(result!=null)return result;
         return structuralAddPersonButton(nodes);
     }
     private boolean hasMaskedPersonRow(List<AccessibilityNodeInfo> nodes){
@@ -229,15 +241,15 @@ public final class FillService extends AccessibilityService {
         return false;
     }
     private AccessibilityNodeInfo structuralAddPersonButton(List<AccessibilityNodeInfo> nodes){
-        // Only use geometry as a fallback on an existing-person list. Old names/IDs are not used to
-        // choose a person; they merely prove that this screen is a list while the wide top control is located.
-        if(!hasMaskedPersonRow(nodes))return null;
+        boolean pageEvidence=hasMaskedPersonRow(nodes);for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()){String value=FlowRules.norm(text(node));if(value.contains("常用信息")||value.contains("观演人")||value.contains("实名信息")){pageEvidence=true;break;}}
+        if(!pageEvidence)return null;
         int width=getResources().getDisplayMetrics().widthPixels,height=getResources().getDisplayMetrics().heightPixels;
         AccessibilityNodeInfo candidate=null;long bestScore=Long.MIN_VALUE;
         for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&node.isEnabled()){
-            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||r.width()<width*55/100||r.height()<dp(40)||r.height()>dp(150))continue;
-            if(r.centerY()<height*10/100||r.centerY()>height*35/100)continue;
-            long score=(node.isClickable()?1000000:0)+(long)r.width()*100-Math.abs(r.centerY()-height*18/100);
+            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||r.width()<width*45/100||r.height()<dp(34)||r.height()>Math.max(dp(180),height*18/100))continue;
+            if(r.centerY()<height*6/100||r.centerY()>height*52/100)continue;
+            String value=FlowRules.norm(text(node));long textBonus=(value.contains("添加")||value.contains("新增")||value.contains("修改"))?1800000L:0;
+            long score=textBonus+(node.isClickable()?1200000L:0)+(long)r.width()*100-Math.abs(r.centerY()-height*22/100)*25L;
             if(score>bestScore){bestScore=score;candidate=node;}
         }
         return candidate;
@@ -251,8 +263,11 @@ public final class FillService extends AccessibilityService {
             if(nf==null&&(hint.contains("姓名")||desc.contains("姓名")||t.equals("请输入姓名")||t.equals("请填写姓名")||t.equals(name)))nf=f;
             if(df==null&&(hint.contains("证件")||desc.contains("证件")||t.contains("证件号")||t.equals(id)))df=f;
         }
+        fields.removeIf(f->{Rect r=new Rect();f.getBoundsInScreen(r);return r.isEmpty()||r.width()<dp(40)||r.height()<dp(20);});
         fields.sort(Comparator.comparingInt(f->{Rect r=new Rect();f.getBoundsInScreen(r);return r.top;}));
-        if((nf==null||df==null)&&fields.size()>=2){nf=fields.get(0);df=fields.get(1);}
+        if(nf==null)nf=fieldNearLabel(nodes,fields,new String[]{"姓名"});
+        if(df==null)df=fieldNearLabel(nodes,fields,new String[]{"证件号码","证件号","身份证"});
+        if((nf==null||df==null)&&fields.size()>=2){if(nf==null)nf=fields.get(0);if(df==null){for(AccessibilityNodeInfo candidate:fields)if(!candidate.equals(nf)){df=candidate;break;}}}
         if(platform==FlowRules.Platform.PIAOXINGQIU&&nf==null){
             if(++nameActivationAttempts>8){paused=true;announce("票星球姓名输入框无法激活，已保留进度；请停留在填写页后点继续");return;}
             if(activatePiaoxingqiuField(nodes,true)){announce("正在激活姓名输入框 · "+(session.index+1)+" / "+total);acted(420);return;}
@@ -273,7 +288,11 @@ public final class FillService extends AccessibilityService {
             }
             Bundle a=new Bundle();a.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,value);field.performAction(AccessibilityNodeInfo.ACTION_FOCUS);boolean set=field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,a);
             if(!set){if(!nameReady)nameActivationAttempts++;else idActivationAttempts++;if(Math.max(nameActivationAttempts,idActivationAttempts)>8){paused=true;announce("票星球输入框无法写入，已保留进度；请停留在填写页后点继续");return;}clickOrTap(field);announce("正在重新激活"+(!nameReady?"姓名":"身份证")+"输入框");acted(500);return;}
+            if(!nameReady)wroteName=true;else wroteId=true;
             acted(260);return;
+        }
+        if(!session.pending&&nameReady&&idReady&&!formOpenedFromList&&!wroteName&&!wroteId&&session.attempts==0){
+            paused=true;announce("检测到当前表单已存在同一人的完整资料，但本次没有确认从人员列表新建进入；已暂停避免重复保存，请返回人员列表后点继续");schedule(700);return;
         }
         if(keyboardVisible()){performGlobalAction(GLOBAL_ACTION_BACK);announce("资料已填写，正在收起键盘");acted(350);return;}
         AccessibilityNodeInfo agreement=platform==FlowRules.Platform.PIAOXINGQIU?best(nodes,"请阅读并同意"):best(nodes,"我已阅读并同意");
@@ -281,11 +300,16 @@ public final class FillService extends AccessibilityService {
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&n.isCheckable()&&!String.valueOf(n.getClassName()).contains("Switch")){
             Rect r=new Rect();n.getBoundsInScreen(r);if(agreement!=null&&Math.abs(r.centerY()-label.centerY())<Math.max(label.height(),r.height())&&r.left<=label.right)checks.add(n);
         }
-        if(checks.size()==1){if(!checks.get(0).isChecked()){announce(FlowRules.stageName(FlowRules.FormStage.AGREEMENT)+" · "+(session.index+1)+" / "+total);agreementAttempts++;if(!clickOrTap(checks.get(0))){recover("正在重新定位协议圆圈");return;}agreementClicked=true;acted(500);return;}agreementClicked=true;}
+        if(checks.size()==1){UiAdaptation.rememberAgreement(this,platform,checks.get(0));if(!checks.get(0).isChecked()){announce(FlowRules.stageName(FlowRules.FormStage.AGREEMENT)+" · "+(session.index+1)+" / "+total);agreementAttempts++;if(!clickOrTap(checks.get(0))){recover("正在重新定位协议圆圈");return;}agreementClicked=true;acted(500);return;}agreementClicked=true;}
         else if(!agreementClicked){
             if(agreement==null){recover("正在查找协议文字和圆圈");return;}
-            Rect circle=new Rect(Math.max(dp(4),label.left-dp(42)),label.centerY()-dp(22),Math.max(dp(44),label.left-dp(2)),label.centerY()+dp(22));
-            announce(FlowRules.stageName(FlowRules.FormStage.AGREEMENT)+" · "+(session.index+1)+" / "+total);if(!tap(circle)){recover("正在重新定位协议圆圈");return;}agreementAttempts++;agreementClicked=true;acted(500);return;
+            AccessibilityNodeInfo learned=UiAdaptation.findAgreement(this,platform,nodes,label);
+            AccessibilityNodeInfo nearby=learned!=null?learned:nearbyAgreementControl(nodes,label);
+            announce(FlowRules.stageName(FlowRules.FormStage.AGREEMENT)+" · "+(session.index+1)+" / "+total);
+            if(nearby!=null&&clickOrTap(nearby)){UiAdaptation.rememberAgreement(this,platform,nearby);agreementAttempts++;agreementClicked=true;acted(500);return;}
+            int gap=Math.max(dp(24),Math.min(dp(54),Math.max(label.height(),dp(18))*3/2));int half=Math.max(dp(16),Math.min(dp(28),Math.max(label.height(),dp(18))));
+            Rect circle=new Rect(Math.max(dp(2),label.left-gap-half),label.centerY()-half,Math.max(dp(4),label.left-gap+half),label.centerY()+half);
+            if(!tap(circle)){recover("正在重新定位协议圆圈");return;}agreementAttempts++;agreementClicked=true;acted(500);return;
         }
         if(!session.maySubmit(now)){schedule(220);return;}
         String confirmText=FlowRules.confirmLabel(platform);AccessibilityNodeInfo confirm=best(nodes,confirmText);if(confirm==null||!confirm.isEnabled()){
@@ -296,15 +320,30 @@ public final class FillService extends AccessibilityService {
         if(!clickOrTap(confirm)){session.failedExplicitly();try{checkpoint(false);}catch(Exception ignored){}recover(confirmText+"按钮未响应");return;}
         announce(FlowRules.stageName(FlowRules.FormStage.SAVING)+" · "+(session.index+1)+" / "+total);acted(500);
     }
+    private AccessibilityNodeInfo fieldNearLabel(List<AccessibilityNodeInfo> nodes,List<AccessibilityNodeInfo> fields,String[] labels){
+        AccessibilityNodeInfo label=null;for(String value:labels){label=unique(nodes,value);if(label!=null)break;}if(label==null)return null;
+        Rect lr=new Rect();label.getBoundsInScreen(lr);if(lr.isEmpty())return null;AccessibilityNodeInfo result=null;long best=Long.MAX_VALUE;int tolerance=Math.max(dp(72),getResources().getDisplayMetrics().heightPixels*9/100);
+        for(AccessibilityNodeInfo field:fields){Rect r=new Rect();field.getBoundsInScreen(r);if(r.isEmpty()||Math.abs(r.centerY()-lr.centerY())>tolerance)continue;long score=(long)Math.abs(r.centerY()-lr.centerY())*10000+Math.abs(r.left-lr.right);if(r.centerX()<lr.centerX())score+=1000000;if(score<best){best=score;result=field;}}
+        return result;
+    }
+    private AccessibilityNodeInfo nearbyAgreementControl(List<AccessibilityNodeInfo> nodes,Rect label){
+        if(label==null||label.isEmpty())return null;AccessibilityNodeInfo result=null;long best=Long.MAX_VALUE;int tolerance=Math.max(dp(72),getResources().getDisplayMetrics().heightPixels*7/100);
+        for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&node.isEnabled()){
+            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||Math.abs(r.centerY()-label.centerY())>tolerance)continue;
+            if(r.width()>getResources().getDisplayMetrics().widthPixels*30/100||r.height()>getResources().getDisplayMetrics().heightPixels*10/100)continue;
+            if(!node.isCheckable()&&!node.isClickable())continue;
+            long score=(long)Math.abs(r.centerY()-label.centerY())*10000+Math.abs(r.centerX()-label.left);if(r.centerX()>label.right)score+=300000;if(node.isCheckable())score-=500000;if(score<best){best=score;result=node;}}
+        return result;
+    }
     private boolean activatePiaoxingqiuField(List<AccessibilityNodeInfo> nodes,boolean name){
         String[] placeholders=name?new String[]{"请填写姓名","请输入姓名","填写姓名"}:new String[]{"请填写证件号码","请输入证件号码","请输入证件号","填写证件号码"};
         for(String value:placeholders){AccessibilityNodeInfo node=best(nodes,value);if(node!=null&&clickOrTap(node))return true;}
         String[] labels=name?new String[]{"姓名"}:new String[]{"证件号码","证件号"};
         AccessibilityNodeInfo label=null;for(String value:labels){label=unique(nodes,value);if(label!=null)break;}
         if(label==null)return false;
-        Rect lr=new Rect();label.getBoundsInScreen(lr);AccessibilityNodeInfo candidate=null;long score=Long.MAX_VALUE;
+        Rect lr=new Rect();label.getBoundsInScreen(lr);AccessibilityNodeInfo candidate=null;long score=Long.MAX_VALUE;int verticalTolerance=Math.max(dp(64),getResources().getDisplayMetrics().heightPixels*8/100);
         for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&node.isEnabled()&&!node.equals(label)){
-            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||r.centerX()<=lr.centerX()||Math.abs(r.centerY()-lr.centerY())>Math.max(dp(52),lr.height()*2))continue;
+            Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty()||r.centerX()<=lr.centerX()||Math.abs(r.centerY()-lr.centerY())>Math.max(verticalTolerance,lr.height()*3))continue;
             boolean inputLike=isTextField(node)||node.isClickable()||FlowRules.norm(text(node)).contains(name?"姓名":"证件");if(!inputLike)continue;
             long next=(long)Math.abs(r.centerY()-lr.centerY())*10000+Math.max(0,r.left-lr.right);if(next<score){score=next;candidate=node;}
         }
