@@ -4,6 +4,7 @@ import android.accessibilityservice.*;
 import android.app.*;
 import android.content.*;
 import android.os.*;
+import android.provider.Settings;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
@@ -28,8 +29,18 @@ public final class FillService extends AccessibilityService {
     private FlowRules.Step lastSeen=FlowRules.Step.UNKNOWN;
     private String lastNavKey="";
     private WindowManager windowManager;private View overlay;private TextView overlayTitle,overlayStatus;private Button overlayToggle,overlayMinimize;private ProgressBar overlayProgress;private LinearLayout overlayDetails;private WindowManager.LayoutParams overlayParams;private boolean overlayMinimized;
-    @Override protected void onServiceConnected(){active=this;restrict(getPackageName());}
+    @Override protected void onServiceConnected(){active=this;restrict(getPackageName());status="辅助填写已连接";sendBroadcast(new Intent(ReceiverService.UPDATE).setPackage(getPackageName()));}
     private void restrict(String... packages){AccessibilityServiceInfo info=getServiceInfo();if(info!=null){info.packageNames=packages;setServiceInfo(info);}}
+    public static boolean systemEnabled(Context context){
+        try{
+            String enabled=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if(enabled==null||enabled.isEmpty())return false;
+            ComponentName self=new ComponentName(context,FillService.class);
+            for(String value:enabled.split(":")){ComponentName component=ComponentName.unflattenFromString(value);if(self.equals(component))return true;}
+        }catch(Exception ignored){}
+        return false;
+    }
+    public static int connectionState(Context context){return !systemEnabled(context)?0:(active==null?1:2);}
     public static boolean available(){return active!=null;}
     public static boolean isRunning(){return active!=null&&active.running;}
     public static boolean start(String pkg,FlowRules.Platform platform,List<String[]> persons,String batch,String after,int stayMs,String maoyan,String planet,String configured) throws Exception {
