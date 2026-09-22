@@ -29,7 +29,7 @@ public final class FlowRules {
 
         if(platform==Platform.PIAOXINGQIU){
             if(any(text,"保存","确认","完成"))form+=2;
-            if(has(text,"姓名")&&any(text,"证件","身份证"))form+=4;
+            if(has(text,"姓名")&&any(text,"证件","身份证")){form+=4;if(any(text,"新增观演/赛人","新增观演人","添加观演/赛人","添加观演人","新增观演人信息"))form+=3;}
             if(any(text,"请阅读并同意","敏感个人信息授权书"))form+=3;
             if(any(text,"新增观演/赛人","新增观演人","添加观演/赛人","添加观演人","新增观演人信息","观演人管理"))list+=6;
             if(masked&&any(text,"观演/赛人","观演人","赛人","常用观演人"))list+=4;
@@ -37,7 +37,7 @@ public final class FlowRules {
             if(has(text,"我的"))home+=2;
         }else{
             if(any(text,"确定","保存","完成"))form+=2;
-            if(has(text,"姓名")&&any(text,"证件","身份证"))form+=4;
+            if(has(text,"姓名")&&any(text,"证件","身份证")){form+=4;if(any(text,"添加/修改观演人信息","修改观演人信息","新增观演人信息","添加观演人信息","添加观演人"))form+=3;}
             if(any(text,"我已阅读并同意","实名说明"))form+=3;
             if(any(text,"添加/修改观演人信息","修改观演人信息","新增观演人信息","添加观演人信息","添加观演人","修改观演人","常用观演人"))list+=6;
             if(has(text,"常用信息")&&any(text,"观演人信息","修改观演人信息","添加观演人信息","身份证"))list+=5;
