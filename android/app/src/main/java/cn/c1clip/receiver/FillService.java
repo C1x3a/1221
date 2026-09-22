@@ -129,9 +129,34 @@ public final class FillService extends AccessibilityService {
     private AccessibilityNodeInfo findTaskRoot(boolean bindRecognized){
         List<AccessibilityNodeInfo> roots=new ArrayList<>();AccessibilityNodeInfo activeRoot=getRootInActiveWindow();if(activeRoot!=null)roots.add(activeRoot);
         try{for(AccessibilityWindowInfo window:getWindows())if((window.isActive()||window.isFocused())&&window.getType()==AccessibilityWindowInfo.TYPE_APPLICATION){AccessibilityNodeInfo root=window.getRoot();if(root!=null&&!roots.contains(root))roots.add(root);}}catch(Exception ignored){}
-        for(AccessibilityNodeInfo root:roots){String pkg=root.getPackageName()==null?"":root.getPackageName().toString();if(isTaskPackage(pkg))return root;}
-        if(bindRecognized)for(AccessibilityNodeInfo root:roots){String pkg=root.getPackageName()==null?"":root.getPackageName().toString();if(pkg.isEmpty()||pkg.equals(getPackageName())||pkg.equals(configuredPkg))continue;List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);if(FlowRules.identifiesPlatformFlow(platform,words(nodes))){runtimeTarget=pkg;restrictForTask(configuredPkg);announce("已识别"+FlowRules.platformName(platform)+"当前流程页面，继续核对保存结果");return root;}}
+        AccessibilityNodeInfo bestTask=null;long bestTaskScore=Long.MIN_VALUE;
+        for(AccessibilityNodeInfo root:roots){
+            String pkg=root.getPackageName()==null?"":root.getPackageName().toString();
+            if(!isTaskPackage(pkg))continue;
+            long score=rootScore(root);if(score>bestTaskScore){bestTaskScore=score;bestTask=root;}
+        }
+        if(bestTask!=null)return bestTask;
+        if(bindRecognized){
+            AccessibilityNodeInfo bestRecognized=null;String bestPkg="";long bestScore=Long.MIN_VALUE;
+            for(AccessibilityNodeInfo root:roots){
+                String pkg=root.getPackageName()==null?"":root.getPackageName().toString();
+                if(pkg.isEmpty()||pkg.equals(getPackageName())||pkg.equals(configuredPkg))continue;
+                List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);Set<String> seen=words(nodes);
+                if(!FlowRules.identifiesPlatformFlow(platform,seen))continue;
+                long score=rootScore(nodes,seen);if(score>bestScore){bestScore=score;bestRecognized=root;bestPkg=pkg;}
+            }
+            if(bestRecognized!=null){runtimeTarget=bestPkg;restrictForTask(configuredPkg);announce("已识别"+FlowRules.platformName(platform)+"当前流程页面，继续当前步骤");return bestRecognized;}
+        }
         return activeRoot;
+    }
+    private long rootScore(AccessibilityNodeInfo root){List<AccessibilityNodeInfo> nodes=new ArrayList<>();collect(root,nodes);return rootScore(nodes,words(nodes));}
+    private long rootScore(List<AccessibilityNodeInfo> nodes,Set<String> seen){
+        long score=nodes.size()*8L+seen.size()*30L;FlowRules.Step page=FlowRules.detect(platform,seen);
+        if(page!=FlowRules.Step.UNKNOWN)score+=6000;
+        if(seen.contains("__forminputs__"))score+=3500;
+        if(seen.contains("__maskedidentity__"))score+=2500;
+        for(String value:seen){if(value.contains("添加")||value.contains("新增")||value.contains("修改"))score+=120;if(value.contains("观演人")||value.contains("观演/赛人")||value.contains("常用信息"))score+=180;}
+        return score;
     }
     private boolean savedRow(List<AccessibilityNodeInfo> nodes,String name,String id){
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&FillSession.maskedIdMatches(text(n),id)){
@@ -221,20 +246,26 @@ public final class FillService extends AccessibilityService {
         int width=getResources().getDisplayMetrics().widthPixels;Rect buttonArea=new Rect(dp(24),Math.max(0,label.centerY()-dp(34)),Math.max(dp(48),width-dp(24)),label.centerY()+dp(34));return tap(buttonArea);
     }
     private AccessibilityNodeInfo addPersonButton(List<AccessibilityNodeInfo> nodes){
-        AccessibilityNodeInfo result=best(nodes,FlowRules.addLabel(platform));
+        AccessibilityNodeInfo result=usableAddCandidate(best(nodes,FlowRules.addLabel(platform)));
         if(platform==FlowRules.Platform.MAOYAN){
-            if(result==null)result=best(nodes,"修改观演人信息");
-            if(result==null)result=best(nodes,"添加观演人信息");
-            if(result==null)result=best(nodes,"添加观演人");
-            if(result==null)result=best(nodes,"修改观演人");
+            if(result==null)result=usableAddCandidate(best(nodes,"修改观演人信息"));
+            if(result==null)result=usableAddCandidate(best(nodes,"添加观演人信息"));
+            if(result==null)result=usableAddCandidate(best(nodes,"添加观演人"));
+            if(result==null)result=usableAddCandidate(best(nodes,"修改观演人"));
         }else{
-            if(result==null)result=best(nodes,"新增观演");
-            if(result==null)result=best(nodes,"添加观演人");
-            if(result==null)result=best(nodes,"新增");
+            if(result==null)result=usableAddCandidate(best(nodes,"新增观演/赛人"));
+            if(result==null)result=usableAddCandidate(best(nodes,"新增观演人"));
+            if(result==null)result=usableAddCandidate(best(nodes,"添加观演人"));
         }
         if(result!=null)return result;
-        result=UiAdaptation.findAdd(this,platform,nodes);if(result!=null)return result;
+        result=UiAdaptation.findAdd(this,platform,nodes);if(usableAddCandidate(result)!=null)return result;
         return structuralAddPersonButton(nodes);
+    }
+    private AccessibilityNodeInfo usableAddCandidate(AccessibilityNodeInfo node){
+        if(node==null)return null;int level=0;for(AccessibilityNodeInfo p=node;p!=null&&level++<10;p=p.getParent())if(p.isVisibleToUser()&&p.isEnabled()&&p.isClickable())return node;
+        Rect r=new Rect();node.getBoundsInScreen(r);if(r.isEmpty())return null;int width=getResources().getDisplayMetrics().widthPixels,height=getResources().getDisplayMetrics().heightPixels;
+        if(r.width()>=width*42/100&&r.height()>=dp(30)&&r.centerY()>=height*12/100&&r.centerY()<=height*94/100)return node;
+        return null;
     }
     private boolean hasMaskedPersonRow(List<AccessibilityNodeInfo> nodes){
         for(AccessibilityNodeInfo node:nodes)if(node.isVisibleToUser()&&FlowRules.norm(text(node)).matches(".*[0-9]{3,}[*•●]+[0-9Xx]{3,}.*"))return true;
@@ -294,8 +325,14 @@ public final class FillService extends AccessibilityService {
         if(!session.pending&&nameReady&&idReady&&!formOpenedFromList&&!wroteName&&!wroteId&&session.attempts==0){
             paused=true;announce("检测到当前表单已存在同一人的完整资料，但本次没有确认从人员列表新建进入；已暂停避免重复保存，请返回人员列表后点继续");schedule(700);return;
         }
-        if(keyboardVisible()){performGlobalAction(GLOBAL_ACTION_BACK);announce("资料已填写，正在收起键盘");acted(350);return;}
         AccessibilityNodeInfo agreement=platform==FlowRules.Platform.PIAOXINGQIU?best(nodes,"请阅读并同意"):best(nodes,"我已阅读并同意");
+        // Never use GLOBAL_ACTION_BACK to hide the IME here. On several Xiaomi/HyperOS builds
+        // the IME window can remain reported for one frame after it has visually disappeared,
+        // causing BACK to leave the whole form and create an endless re-entry/refill loop.
+        if(agreement==null&&keyboardVisible()){
+            AccessibilityNodeInfo safe=best(nodes,"证件类型");if(safe==null)safe=best(nodes,"姓名");
+            if(safe!=null){Rect sr=new Rect();safe.getBoundsInScreen(sr);if(!sr.isEmpty()){tap(sr);announce("资料已填写，正在安全收起键盘");acted(320);return;}}
+        }
         List<AccessibilityNodeInfo> checks=new ArrayList<>();Rect label=new Rect();if(agreement!=null)agreement.getBoundsInScreen(label);
         for(AccessibilityNodeInfo n:nodes)if(n.isVisibleToUser()&&n.isCheckable()&&!String.valueOf(n.getClassName()).contains("Switch")){
             Rect r=new Rect();n.getBoundsInScreen(r);if(agreement!=null&&Math.abs(r.centerY()-label.centerY())<Math.max(label.height(),r.height())&&r.left<=label.right)checks.add(n);
