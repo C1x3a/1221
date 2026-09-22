@@ -193,10 +193,11 @@ public final class FillService extends AccessibilityService {
             AccessibilityNodeInfo agree=unique(nodes,"同意");announce("确认票星球授权弹窗 · "+(session.index+1)+" / "+total);
             if(agree==null||!clickOrTap(agree)){announce("等待票星球授权弹窗的“同意”按钮");schedule(450);return;}acted(650);return;
         }
-        // The add/modify control is the strongest list-page signal. Some Xiaomi WebViews expose its
-        // clickable rectangle but omit the text, so resolve the actual control before text-only routing.
-        AccessibilityNodeInfo addControl=addPersonButton(nodes);if(addControl!=null)visible.add("__addcontrol__");FlowRules.Step textPage=FlowRules.detect(platform,visible);
-        // A form title can contain “添加观演人信息”, so completed form evidence always wins.
+        // Resolve strong form evidence before looking for an add-person control. The same words
+        // ("新增观演/赛人" / "添加观演人信息") are also used as form titles on some WebViews.
+        FlowRules.Step textPage=FlowRules.detect(platform,visible);
+        AccessibilityNodeInfo addControl=textPage==FlowRules.Step.FORM?null:addPersonButton(nodes);
+        if(addControl!=null){visible.add("__addcontrol__");textPage=FlowRules.detect(platform,visible);}
         FlowRules.Step page=textPage==FlowRules.Step.FORM?textPage:addControl!=null?FlowRules.Step.LIST:textPage;if(!stable(page,now)){schedule(180);return;}last=page;
         String[] person=people.get(session.index);String name=person[0],id=person[1];
         String feedback=signal+" "+String.join(" ",visible);signal="";
