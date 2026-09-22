@@ -34,7 +34,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved){super.onCreate(saved);getWindow().setStatusBarColor(Color.WHITE);getWindow().setNavigationBarColor(Color.WHITE);getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         ScrollView scroll=new ScrollView(this);body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(16),dp(12),dp(16),dp(24));scroll.addView(body);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(245,248,253));setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{body.setPadding(dp(16),dp(12)+insets.getSystemWindowInsetTop(),dp(16),dp(24)+insets.getSystemWindowInsetBottom());return insets;});
-        label(body,"RH信息接收",28,ink,true);label(body,"0.6.2  ·  接收、整理、稳定填写",13,muted,false);
+        label(body,"RH信息接收",28,ink,true);label(body,"0.6.4  ·  接收、整理、自适应填写",13,muted,false);
         section("设备连接","");network=label(card,ReceiverService.status,14,muted,false);
         action(card,"连接与权限设置",false,this::showSettings);
         section("1 · 接收信息","电脑发送后自动更新；姓名与证件号分别保留。");count=label(card,"等待资料",14,blue,true);contents=new LinearLayout(this);contents.setOrientation(LinearLayout.VERTICAL);card.addView(contents);
@@ -63,6 +63,9 @@ public final class MainActivity extends Activity {
         int accessState=FillService.connectionState(this);String accessTitle=accessState==2?"辅助填写权限 · 已连接":accessState==1?"辅助填写权限 · 已授权，等待连接":"开启辅助填写权限";
         action(panel,accessTitle,false,()->{if(FillService.systemEnabled(this)){toast(FillService.available()?"辅助填写已授权并连接，无需重复开启":"辅助填写已授权，系统正在自动恢复连接，无需重复开关");return;}new AlertDialog.Builder(this).setTitle("辅助填写权限").setMessage("首次使用只需在系统设置中开启一次。之后关闭或重新打开 RH信息接收时不需要重复授权。点击猫眼或票星球后，服务会从当前页面继续填写；页面内容不会上传。").setPositiveButton("前往设置",(d,w)->safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("取消",null).show();});
         action(panel,"允许后台持续联网",false,()->safeStart(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()))));action(panel,"打开应用系统设置",false,()->safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
+        label(panel,"界面适配",16,ink,true);
+        label(panel,"自动学习当前手机的控件位置与页面结构，只保存布局比例，不保存姓名、身份证或页面内容。\n"+UiAdaptation.summary(this),12,muted,false);
+        action(panel,"清除并重新学习本机界面适配",false,()->{UiAdaptation.clear(this);toast("本机界面适配已清除；下次进入猫眼/票星球人员流程时会自动重新学习");});
         action(panel,"重新选择猫眼 / 票星球",false,()->{getPreferences(0).edit().remove("app_猫眼").remove("app_票星球").apply();toast("下次点击时重新选择");});
         action(panel,"处理上次结果不明的提交",false,()->new AlertDialog.Builder(this).setTitle("先核对平台人员列表").setMessage("只有确认当前人员尚未保存时，才解除等待状态。已经保存的人员请直接在列表页面重试，程序会先检查列表。").setPositiveButton("已核对未保存，允许重试",(d,w)->{FillService.cancel("准备重试");try{synchronized(Vault.class){JSONObject state=Vault.read(this);for(String key:new String[]{"fillProgress","fillProgress_MAOYAN","fillProgress_PIAOXINGQIU"}){JSONObject progress=state.optJSONObject(key);if(progress!=null)progress.put("pending",false);}Vault.write(this,state);}toast("已解除等待，可点击对应平台继续");}catch(Exception e){toast("更新失败");}}).setNegativeButton("取消",null).show());
         label(panel,"无法识别页面时只尝试重新打开一次，随后暂停，不会盲目返回或循环。回到本 APP 再点击平台可重新启动。",12,muted,false);
