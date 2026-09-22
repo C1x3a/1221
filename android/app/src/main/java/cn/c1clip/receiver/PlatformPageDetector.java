@@ -31,7 +31,8 @@ public final class PlatformPageDetector {
     }
 
     private static boolean has(Set<String> v,String part){for(String s:v)if(s!=null&&s.contains(part))return true;return false;}
-    private static boolean any(Set<String> v,String... parts){for(String p:parts)if(has(v,p))return true;return false;}\n    private static boolean exact(Set<String> v,String value){for(String s:v)if(s!=null&&s.equals(value))return true;return false;}
+    private static boolean any(Set<String> v,String... parts){for(String p:parts)if(has(v,p))return true;return false;}
+    private static boolean exact(Set<String> v,String value){for(String s:v)if(s!=null&&s.equals(value))return true;return false;}
 
     public static Result detect(FlowRules.Platform platform,Snapshot s){
         return platform==FlowRules.Platform.PIAOXINGQIU?detectPlanet(s):detectMaoyan(s);
@@ -75,7 +76,8 @@ public final class PlatformPageDetector {
         boolean confirm=s.clickableConfirm||any(v,"保存","确认");
         boolean agreement=any(v,"请阅读并同意","敏感个人信息授权书");
         boolean formTitle=any(v,"新增观演/赛人","新增观演人","添加观演/赛人","添加观演人");
-        boolean personTitle=any(v,"观演/赛人","观演赛人","观演人","观演人管理");\n        boolean exactPersonTitle=exact(v,"观演/赛人")||exact(v,"观演赛人")||exact(v,"观演人")||exact(v,"观演人管理");
+        boolean personTitle=any(v,"观演/赛人","观演赛人","观演人","观演人管理");
+        boolean exactPersonTitle=exact(v,"观演/赛人")||exact(v,"观演赛人")||exact(v,"观演人")||exact(v,"观演人管理");
         boolean addText=any(v,"新增观演/赛人","新增观演人","添加观演/赛人","添加观演人");
 
         if(has(v,"敏感个人信息授权书")&&has(v,"同意")&&has(v,"不同意"))
