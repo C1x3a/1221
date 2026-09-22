@@ -17,7 +17,9 @@ public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private LinearLayout body,contents;private TextView network,fillStatus,copyStatus;
     private JSONObject batch;private List<String[]> people=new ArrayList<>();private String shown="";private boolean copying=false,resumed=false;private int copied=0;private String copyId="";
+    private String pendingFill="";private int fillReconnectAttempts=0;
     private final Runnable copyStep=this::copyNext;
+    private final Runnable fillReconnect=this::resumePendingFill;
     private int blue=Color.rgb(21,93,251);
     private LinearLayout card;
     private TextView count,afterLabel;private ProgressBar taskProgress;
@@ -58,7 +60,8 @@ public final class MainActivity extends Activity {
         EditText input=new EditText(this);input.setHint("粘贴配对链接");input.setMinLines(2);input.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);input.setAutofillHints((String[])null);panel.addView(input);
         action(panel,"保存配对并接收",true,()->{try{JSONObject pair=Protocol.pair(input.getText().toString());FillService.cancel("配对已更新");stopCopy("配对已更新");stopService(new Intent(this,ReceiverService.class));Vault.savePair(this,pair);input.setText("");shown="";handler.postDelayed(this::startReceive,500);refresh();toast("已保存："+pair.getString("name"));}catch(Exception e){toast("配对失败，请检查链接");}});
         action(panel,"开始后台接收",false,this::startReceive);action(panel,"停止后台接收",false,()->{FillService.cancel("已停止");stopService(new Intent(this,ReceiverService.class));});
-        action(panel,"开启辅助填写权限",false,()->new AlertDialog.Builder(this).setTitle("辅助填写权限").setMessage("点击猫眼或票星球后，服务会识别当前页面，从首页、我的、人员列表或填写页继续。每次点击后会等待页面变化，不会盲目返回。悬浮小窗可查看进度、暂停/继续或切换平台；如遇验证码、登录失效或资料校验错误，需要你先处理。页面内容不会上传。").setPositiveButton("前往设置",(d,w)->safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("取消",null).show());
+        int accessState=FillService.connectionState(this);String accessTitle=accessState==2?"辅助填写权限 · 已连接":accessState==1?"辅助填写权限 · 已授权，等待连接":"开启辅助填写权限";
+        action(panel,accessTitle,false,()->{if(FillService.systemEnabled(this)){toast(FillService.available()?"辅助填写已授权并连接，无需重复开启":"辅助填写已授权，系统正在自动恢复连接，无需重复开关");return;}new AlertDialog.Builder(this).setTitle("辅助填写权限").setMessage("首次使用只需在系统设置中开启一次。之后关闭或重新打开 RH信息接收时不需要重复授权。点击猫眼或票星球后，服务会从当前页面继续填写；页面内容不会上传。").setPositiveButton("前往设置",(d,w)->safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("取消",null).show();});
         action(panel,"允许后台持续联网",false,()->safeStart(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName()))));action(panel,"打开应用系统设置",false,()->safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName()))));
         action(panel,"重新选择猫眼 / 票星球",false,()->{getPreferences(0).edit().remove("app_猫眼").remove("app_票星球").apply();toast("下次点击时重新选择");});
         action(panel,"处理上次结果不明的提交",false,()->new AlertDialog.Builder(this).setTitle("先核对平台人员列表").setMessage("只有确认当前人员尚未保存时，才解除等待状态。已经保存的人员请直接在列表页面重试，程序会先检查列表。").setPositiveButton("已核对未保存，允许重试",(d,w)->{FillService.cancel("准备重试");try{synchronized(Vault.class){JSONObject state=Vault.read(this);for(String key:new String[]{"fillProgress","fillProgress_MAOYAN","fillProgress_PIAOXINGQIU"}){JSONObject progress=state.optJSONObject(key);if(progress!=null)progress.put("pending",false);}Vault.write(this,state);}toast("已解除等待，可点击对应平台继续");}catch(Exception e){toast("更新失败");}}).setNegativeButton("取消",null).show());
@@ -74,7 +77,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy(){handler.removeCallbacksAndMessages(null);super.onDestroy();}
     private final Runnable refreshTick=new Runnable(){public void run(){refresh();if(resumed)handler.postDelayed(this,1200);}};
     private void refresh(){try{
-        JSONObject state=Vault.read(this),pair=state.optJSONObject("pair");network.setText((pair==null?"未配对":pair.optString("name"))+"\n"+ReceiverService.status);fillStatus.setText(FillService.status);taskProgress.setMax(Math.max(1,FillService.total));taskProgress.setProgress(FillService.completed);
+        JSONObject state=Vault.read(this),pair=state.optJSONObject("pair");network.setText((pair==null?"未配对":pair.optString("name"))+"\n"+ReceiverService.status);int accessState=FillService.connectionState(this);String accessText=accessState==2?"辅助填写权限：已连接":accessState==1?"辅助填写权限：已授权，等待系统连接":"辅助填写权限：未开启";fillStatus.setText(accessText+"\n"+FillService.status);taskProgress.setMax(Math.max(1,FillService.total));taskProgress.setProgress(FillService.completed);
         JSONObject next=Vault.latest(this);String nextId=next==null?"empty":next.optString("id");if(nextId.equals(shown))return;
         stopCopy("收到最新内容，已停止旧内容复制");batch=next;shown=nextId;contents.removeAllViews();people=new ArrayList<>();
         if(batch==null){count.setText("等待资料");label(contents,"电脑发送后，可选择猫眼或票星球填写。",14,muted,false);}
@@ -96,8 +99,16 @@ public final class MainActivity extends Activity {
     private void terminateTask(){FillService.cancel("任务已终止");clearFillProgress();FillService.status="任务已终止，可点击平台或重新开始";refresh();toast("当前填写任务已终止");}
     private void restartTask(){String label=getPreferences(0).getString("lastFillPlatform","");if(label.isEmpty()){toast("请先点击一次猫眼或票星球");return;}clearFillProgress();FillService.cancel("正在重新开始");target(label,true);}
     private void target(String label,boolean fill){
-        if(fill){if(people.isEmpty()){toast("请先接收并核对姓名和身份证");return;}if(!FillService.available()){toast("请先点击‘启用辅助填写权限’");return;}}
+        if(fill){if(people.isEmpty()){toast("请先接收并核对姓名和身份证");return;}int access=FillService.connectionState(this);if(access==0){toast("辅助填写权限未开启，请在连接与权限设置中首次授权");return;}if(access==1){waitForFillService(label);return;}}
         String pkg=getPreferences(0).getString("app_"+label,"");if(pkg.isEmpty()){chooseApp(label,fill);return;}launch(label,pkg,fill);
+    }
+    private void waitForFillService(String label){pendingFill=label;fillReconnectAttempts=0;handler.removeCallbacks(fillReconnect);toast("辅助填写已授权，正在等待系统自动连接");handler.post(fillReconnect);}
+    private void resumePendingFill(){
+        if(pendingFill.isEmpty())return;
+        if(!FillService.systemEnabled(this)){pendingFill="";toast("辅助填写权限已关闭，请重新授权");return;}
+        if(FillService.available()){String label=pendingFill;pendingFill="";fillReconnectAttempts=0;target(label,true);return;}
+        if(fillReconnectAttempts++>=20){pendingFill="";toast("辅助填写仍已授权，但系统暂未连接。请将 RH信息接收 的电池策略设为“无限制/允许后台运行”；无需反复关闭再开启无障碍。");return;}
+        handler.postDelayed(fillReconnect,400);
     }
     private interface AppChoice{void selected(String pkg,String name);}
     private void chooseInstalled(String title,String preferred,AppChoice choice){
